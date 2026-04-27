@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+MANIFEST
+
+# Virtual env
+.venv/
+env/
+venv/
+ENV/
+
+# Data files — too large for git
+*.parquet
+*.arrow
+*.npy
+*.npz
+*.feather
+*.csv.gz
+
+# Model artifacts — binary, large
+eda/artifacts/
+
+# CatBoost training logs
+catboost_info/
+
+# Tool dirs
+.claude/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CSV scores (derivable, large)
+eda/scoring/scored_tokens.parquet
+eda/scoring/scored_1000_recent.parquet
+eda/two_stage/trades.parquet
+eda/backtest/trades_*.parquet

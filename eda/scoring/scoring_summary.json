@@ -1,0 +1,21 @@
+{
+  "best_model": "instant/lgbm",
+  "auc": 0.7652714829208278,
+  "pr_auc": 0.42887151928534323,
+  "brier": 0.19669630450190614,
+  "base_rate": 0.1659921404511585,
+  "buy_decision": {
+    "threshold": 0.39,
+    "lift": 3.512644205536114,
+    "precision": 0.5830713303202987,
+    "n_selected": 20356,
+    "selection_rate": 0.051944472797795245
+  },
+  "high_conviction": {
+    "threshold": 0.9500000000000001,
+    "lift": 5.9870404116210425,
+    "precision": 0.993801652892562,
+    "n_selected": 484,
+    "selection_rate": 0.001235071960804328
+  }
+}

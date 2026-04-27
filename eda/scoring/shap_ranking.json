@@ -1,0 +1,186 @@
+[
+  {
+    "feature": "deployer_prior_hit20k",
+    "mean_abs_shap": 0.5578513462543612
+  },
+  {
+    "feature": "deployer_seconds_since_last",
+    "mean_abs_shap": 0.43510045036520006
+  },
+  {
+    "feature": "deployer_prior_n",
+    "mean_abs_shap": 0.3750368929950965
+  },
+  {
+    "feature": "deployer_wallet_balance_after_sol",
+    "mean_abs_shap": 0.18211706842824846
+  },
+  {
+    "feature": "image_hash_seen_total",
+    "mean_abs_shap": 0.1670382520335883
+  },
+  {
+    "feature": "funder_prior_n",
+    "mean_abs_shap": 0.15529849252672986
+  },
+  {
+    "feature": "mint_suffix_pump",
+    "mean_abs_shap": 0.1434208619251164
+  },
+  {
+    "feature": "deployer_deposit_amount",
+    "mean_abs_shap": 0.14259376204138674
+  },
+  {
+    "feature": "name_upper_chars",
+    "mean_abs_shap": 0.12806910402665497
+  },
+  {
+    "feature": "btc_close",
+    "mean_abs_shap": 0.10793266911726623
+  },
+  {
+    "feature": "funder_prior_hit20k",
+    "mean_abs_shap": 0.08893033666846412
+  },
+  {
+    "feature": "has_twitter",
+    "mean_abs_shap": 0.08812750203052153
+  },
+  {
+    "feature": "deployer_wallet_balance_before",
+    "mean_abs_shap": 0.08591475529162777
+  },
+  {
+    "feature": "desc_len",
+    "mean_abs_shap": 0.07897941918179774
+  },
+  {
+    "feature": "deployer_wallet_source_amount_sol",
+    "mean_abs_shap": 0.05386054662965377
+  },
+  {
+    "feature": "name_len",
+    "mean_abs_shap": 0.05258894099525856
+  },
+  {
+    "feature": "same_ticker_today_prev",
+    "mean_abs_shap": 0.04627416355894002
+  },
+  {
+    "feature": "has_website",
+    "mean_abs_shap": 0.03527978255628005
+  },
+  {
+    "feature": "utc_dow",
+    "mean_abs_shap": 0.0218289232875267
+  },
+  {
+    "feature": "utc_sin",
+    "mean_abs_shap": 0.021818374395678908
+  },
+  {
+    "feature": "hit20k_rate_prev_60m",
+    "mean_abs_shap": 0.01835496076941757
+  },
+  {
+    "feature": "has_image",
+    "mean_abs_shap": 0.018141721153084215
+  },
+  {
+    "feature": "utc_hour",
+    "mean_abs_shap": 0.015024108634084796
+  },
+  {
+    "feature": "same_name_prev_hour",
+    "mean_abs_shap": 0.014220605207691915
+  },
+  {
+    "feature": "funder_prior_grad",
+    "mean_abs_shap": 0.013383782444755207
+  },
+  {
+    "feature": "ticker_len",
+    "mean_abs_shap": 0.012611410632951877
+  },
+  {
+    "feature": "has_telegram",
+    "mean_abs_shap": 0.01188176411740739
+  },
+  {
+    "feature": "ldn_hour",
+    "mean_abs_shap": 0.010693107522735853
+  },
+  {
+    "feature": "utc_cos",
+    "mean_abs_shap": 0.010029351232807905
+  },
+  {
+    "feature": "name_alpha_chars",
+    "mean_abs_shap": 0.009618077302051392
+  },
+  {
+    "feature": "deploys_prev_60m",
+    "mean_abs_shap": 0.009141547167135663
+  },
+  {
+    "feature": "sol_close",
+    "mean_abs_shap": 0.0089991576785559
+  },
+  {
+    "feature": "sol_vol_24h",
+    "mean_abs_shap": 0.008043991863658648
+  },
+  {
+    "feature": "tokyo_hour",
+    "mean_abs_shap": 0.007903226014700997
+  },
+  {
+    "feature": "deployer_prior_grad",
+    "mean_abs_shap": 0.007279767229152081
+  },
+  {
+    "feature": "sol_ret_24h",
+    "mean_abs_shap": 0.005746932761184449
+  },
+  {
+    "feature": "ny_hour",
+    "mean_abs_shap": 0.005593269886812877
+  },
+  {
+    "feature": "sol_ret_1h",
+    "mean_abs_shap": 0.005460545657515085
+  },
+  {
+    "feature": "deploys_prev_15m",
+    "mean_abs_shap": 0.005171876872191531
+  },
+  {
+    "feature": "btc_vol_1h",
+    "mean_abs_shap": 0.003349845397683659
+  },
+  {
+    "feature": "sol_vol_1h",
+    "mean_abs_shap": 0.0032876830004956704
+  },
+  {
+    "feature": "btc_ret_1h",
+    "mean_abs_shap": 0.003277193669490154
+  },
+  {
+    "feature": "has_desc",
+    "mean_abs_shap": 0.0021625446625587767
+  },
+  {
+    "feature": "deployer_wallet_source_cex_name",
+    "mean_abs_shap": 0.0020030501543380056
+  },
+  {
+    "feature": "is_cex",
+    "mean_abs_shap": 0.00020038196150401998
+  },
+  {
+    "feature": "deployer_suffix_pump",
+    "mean_abs_shap": 0.0
+  }
+]
