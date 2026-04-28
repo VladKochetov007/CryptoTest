@@ -46,6 +46,8 @@ The test task goal is **"accuracy in selecting tokens with potential ROI > 2x af
 
 The model selection contributes ~3× more lift than the exit logic — **where you buy beats how you sell**.
 
+![OOS equity curves](eda/plots/backtest_equity_curve_oos.png)
+
 ---
 
 ## What Was Built
