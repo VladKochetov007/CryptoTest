@@ -164,10 +164,9 @@ def main():
 
         print("\nTop-20 features by |SHAP|:")
         for name, val in shap_rank[:20]:
-            tag = " [NEW]" if name in META_FEATURES else ""
-            print(f"  {val:.4f}  {name}{tag}")
+            print(f"  {val:.4f}  {name}")
 
-        shap_json = [{"feature": n, "mean_abs_shap": float(v), "is_new": n in META_FEATURES}
+        shap_json = [{"feature": n, "mean_abs_shap": float(v)}
                      for n, v in shap_rank]
         (ART / "shap_meta.json").write_text(json.dumps(shap_json, indent=2))
 
@@ -175,13 +174,13 @@ def main():
         top_n = shap_rank[:30]
         names = [n for n, _ in top_n]
         vals = [v for _, v in top_n]
-        colors = ["#e74c3c" if n in META_FEATURES else "#3498db" for n in names]
+        colors = ["#3498db"] * len(names)
         fig, ax = plt.subplots(figsize=(10, 8))
         ax.barh(range(len(names)), vals[::-1], color=colors[::-1])
         ax.set_yticks(range(len(names)))
         ax.set_yticklabels(names[::-1], fontsize=8)
         ax.set_xlabel("Mean |SHAP|")
-        ax.set_title("Top-30 features: red=new meta, blue=baseline")
+        ax.set_title("Top-30 features by mean |SHAP|")
         plt.tight_layout()
         fig.savefig(PLOT_DIR / "meta_shap_importance.png", dpi=150)
         plt.close(fig)

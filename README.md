@@ -173,7 +173,7 @@ Alpha lift: **+24.5 pp win rate** from model selection vs random. CEX heuristic 
 
 Multi-scale deployer rolling features built via cumsum+searchsorted (O(N log N), 12s for 500k tokens):
 
-| New Feature | IV | SHAP Rank |
+| Feature | IV | SHAP Rank |
 |---|---|---|
 | `deployer_hr_7d` — 7-day rolling win rate | **0.97** | **#1** (0.735) |
 | `deployer_hr_24h` | 0.90 | #4 |
@@ -205,8 +205,8 @@ All plots in `eda/plots/`:
 
 | File | What it shows |
 |---|---|
-| `meta_shap_importance.png` | Top-30 SHAP — red bars = new meta features |
-| `meta_feature_iv_bar.png` | Information Value of all 35 new features |
+| `meta_shap_importance.png` | Top-30 features by mean |SHAP| |
+| `meta_feature_iv_bar.png` | Information Value of all 35 meta-features |
 | `meta_deployer_scale_auc.png` | Univariate AUC at 1h/6h/24h/7d windows |
 | `meta_text_auc.png` | Twitter handle + description + name feature AUCs |
 | `meta_meme_kw_by_hour.png` | hit_2x rate for meme vs non-meme tokens by UTC hour |
