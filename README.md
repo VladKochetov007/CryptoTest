@@ -169,7 +169,7 @@ Random universe baseline: trailing_30 wins 36.1%, median ROI 0%.
 
 Alpha lift: **+24.5 pp win rate** from model selection vs random. CEX heuristic ≈ random (zero alpha).
 
-### Part 3: Meta-Features Research (Overnight)
+### Part 3: Meta-Features Research
 
 Multi-scale deployer rolling features built via cumsum+searchsorted (O(N log N), 12s for 500k tokens):
 
