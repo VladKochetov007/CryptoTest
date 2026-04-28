@@ -95,7 +95,52 @@ gRPC CreateEvent
 
 All results in `eda/backtest/` (JSON summaries committed) and `eda/two_stage/summary.json`.
 
-Six exit strategies backtested on model top-decile, random, and CEX-heuristic universes (5000 tokens each, full slot-level simulation, no slippage in Part 2 tables):
+#### Backtest Methodology
+
+**Entry**: first slot price after deploy (slot 0 price, no slippage). In live trading, this is the price at which your buy lands before the first price move.
+
+**Exit simulation**: slot-level replay using real `slot_features_60m.parquet` price data (one row per ~6.4s slot, up to 60 minutes). Each strategy is applied tick-by-tick to real prices — no curve-fitting, no look-ahead.
+
+**Sizing (single-stage)**: flat 1 SOL per trade, no Kelly sizing, no compounding, no position scaling, no slippage. PnL = ROI × 1 SOL.
+
+**Sizing (two-stage)**: 0.1 SOL probe at slot 0 → re-score using 60s post-launch data → scale to 1.0 SOL or abort. 100 bps buy + 100 bps sell slippage applied.
+
+**Universe**: each run selects 5000 tokens (random seed 42 for reproducibility):
+- `model_top` — top-decile by walk-forward OOF score (fully OOS, no look-ahead)
+- `random` — random sample (no selection signal)
+- `cex_heuristic` — tokens funded from a CEX wallet (task's suggested heuristic)
+
+**What was tried (6 strategies)**:
+
+| Strategy | Logic | What it tests |
+|---|---|---|
+| `tp_2x_only` | Sell at 2× entry price | Pure upside target, no downside protection |
+| `tp_2x_sl_50` | 2× TP + -50% stop-loss | TP with hard floor |
+| `trailing_30` | Arm at +50% peak, trail -30% from max | Lets winners run, exits on momentum reversal |
+| `vol_stagnation_10` | Exit if volume < 10% of 60s rolling max for 10 slots | Sell into dying momentum |
+| `sell_pressure_5` | Exit if sell_vol > 1.5× buy_vol for 5 consecutive slots | Order-flow flip detection |
+| `deployer_sell_exit` | Exit on first deployer sell + 3× TP + -50% SL | Insider signal (hypothesis: rug warning) |
+
+`deployer_sell_exit` was the worst (-19.4% median ROI): by the time the deployer sells, the rug has usually already happened. The signal is too late.
+
+**Returns on capital (model_top + trailing_30, 19-day backtest, 5000 trades)**:
+
+| Metric | Single-stage | Two-stage |
+|---|---|---|
+| Position size | 1 SOL flat | 0.1 SOL probe → 1.0 SOL scale |
+| Slippage | None | 100 bps round-trip |
+| Total invested | 5,000 SOL (across all trades) | 1,340 SOL (500 probes + 840 full) |
+| Total PnL | +2,661 SOL raw / +2,022 SOL (ROI cap +500%) | +3,352 SOL |
+| **ROI on invested** | **53.2% raw / 40.4% winsorized** | **250% on 1,340 SOL** |
+| Avg concurrent positions | ~0.1 (median hold 26s, 321 trades/day) | ~0.1 |
+| Working capital needed | ~1–2 SOL (sequential recycling) | ~1–2 SOL |
+| Win rate | 60.6% | 27.6% (many probes aborted at 60s) |
+
+> **Note on working capital**: with 321 trades/day and 26s median hold, average concurrency = 0.10 positions. In practice you never have more than 1–2 open at once, so ~2 SOL of working capital is enough to run all trades sequentially. The 5,000 SOL "total invested" figure assumes you treat each trade independently; with capital recycling the actual exposure is far smaller.
+
+> **Note on raw vs winsorized**: a handful of tokens went 50–1000×. The raw PnL includes these tail events intact. The winsorized figure caps each trade at +500% per bet to show what you'd get without relying on extremely rare outliers.
+
+Six exit strategies backtested on model top-decile, random, and CEX-heuristic universes (5000 tokens each):
 
 | Strategy | Win % | Median ROI | Med hold | Notes |
 |---|---|---|---|---|
@@ -104,15 +149,15 @@ Six exit strategies backtested on model top-decile, random, and CEX-heuristic un
 | `vol_stagnation_10` | 52.6% | +12.2% | 15s | Exit if vol < 10% of 60s rolling max |
 | `tp_2x_only` | 52.2% | +9.4% | 35s | Pure 2x take-profit |
 | `tp_2x_sl_50` | 49.6% | 0.0% | 15s | 2x TP + -50% SL |
-| `deployer_sell_exit` | 32.5% | **-19.4%** | 47s | Exit on deployer first sell — worst (most tokens already rugged) |
+| `deployer_sell_exit` | 32.5% | **-19.4%** | 47s | Exit on deployer first sell — worst |
 
-Random universe baseline for comparison: trailing_30 wins 36.1%, median ROI 0%.
+Random universe baseline: trailing_30 wins 36.1%, median ROI 0%.
 
 **Two-stage integrated simulation** (`eda/two_stage/summary.json`):
-- Entry: 0.1 SOL probe → re-score at 60s → scale to 1.0 SOL or abort
-- 100 bps buy + 100 bps sell slippage
-- 5,000 candidate trades from 224k eligible tokens
-- Result: **+3,352 SOL** gross PnL, 27.6% win rate (tail-harvester profile)
+- 3,336 probe-only (score too low at 60s → exit at 0.1 SOL)
+- 824 abort at 60s (score dropped → cut the probe)
+- 840 full scale (score held → 1.0 SOL)
+- Result: **+3,352 SOL** gross PnL, 250% ROI on 1,340 SOL invested
 
 **Backtests vs universe comparison:**
 
