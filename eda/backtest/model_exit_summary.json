@@ -1,0 +1,40 @@
+{
+  "params": {
+    "arm_mult": 1.3,
+    "trail_frac": 0.8,
+    "hard_sl_frac": 0.4,
+    "exit_prob_floor": 0.15,
+    "slip_bps": 100,
+    "stage1": "meta",
+    "stage2": "with60s"
+  },
+  "trailing_only_baseline": {
+    "n": 5000,
+    "total_pnl_sol": 2182.839251194124,
+    "mean_roi": 0.4365678502388248,
+    "median_roi": 0.22278319231271582,
+    "p10_roi": -0.6196369360533475,
+    "p90_roi": 1.3718612518026976,
+    "win_rate": 0.7084,
+    "exit_reasons": {
+      "trail": 3784,
+      "timeout": 552,
+      "sl_hard": 664
+    }
+  },
+  "model_as_exit": {
+    "n": 5000,
+    "total_pnl_sol": 2125.749992790162,
+    "mean_roi": 0.4251499985580324,
+    "median_roi": 0.2168450049236439,
+    "p10_roi": -0.6199508016982802,
+    "p90_roi": 1.3724534343062407,
+    "win_rate": 0.676,
+    "exit_reasons": {
+      "trail": 3584,
+      "model_exit_60s": 388,
+      "timeout": 378,
+      "sl_hard": 650
+    }
+  }
+}

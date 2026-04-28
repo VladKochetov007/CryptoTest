@@ -69,18 +69,16 @@ def slip(price: float, bps: int, side: str) -> float:
     return price * (1 - f)
 
 
-def simulate_one(prices: np.ndarray, secs: np.ndarray,
-                  instant_p: float, with60s_p: float | None) -> dict:
-    """Single token end-to-end."""
+def simulate_one_flat(prices: np.ndarray, secs: np.ndarray,
+                       instant_p: float, with60s_p: float | None) -> dict:
+    """Flat 100bps slip per side (legacy baseline)."""
     if instant_p < BUY_THRESHOLD:
         return {"action": "skip", "pnl_sol": 0.0, "size_sol": 0.0, "exit_reason": "no_buy"}
-    # stage 1: probe
     entry_p = slip(prices[0], ENTRY_SLIPPAGE_BPS, "buy")
     position_size = PROBE_SIZE
     avg_entry = entry_p
 
-    # find slot at ~60 s for stage 2
-    idx_60 = int(np.searchsorted(secs, 60))
+    idx_60 = int(np.searchsorted(secs, 60, side="left"))
     idx_60 = min(idx_60, len(prices) - 1)
     if with60s_p is not None and idx_60 < len(prices) - 1:
         if with60s_p < ABORT_THRESHOLD:
@@ -88,14 +86,14 @@ def simulate_one(prices: np.ndarray, secs: np.ndarray,
             pnl = (exit_price - avg_entry) * position_size / avg_entry
             return {"action": "abort_60s", "pnl_sol": pnl, "size_sol": position_size,
                     "exit_reason": "abort_60s",
-                    "entry_price": avg_entry, "exit_price": exit_price}
+                    "entry_price": avg_entry, "exit_price": exit_price,
+                    "hold_sec": int(secs[idx_60] - secs[0])}
         if with60s_p >= SCALE_THRESHOLD:
             scale_p = slip(prices[idx_60], ENTRY_SLIPPAGE_BPS, "buy")
             scale_add = FULL_SIZE - PROBE_SIZE
             avg_entry = (avg_entry * PROBE_SIZE + scale_p * scale_add) / FULL_SIZE
             position_size = FULL_SIZE
 
-    # stage 3: trailing exit from idx_60 (or 0 if no scale)
     start = idx_60 if (with60s_p is not None and with60s_p >= SCALE_THRESHOLD) else 0
     exit_idx, raw_exit, reason = trailing_30_exit(prices, secs, start)
     exit_p = slip(raw_exit, EXIT_SLIPPAGE_BPS, "sell")
@@ -107,8 +105,68 @@ def simulate_one(prices: np.ndarray, secs: np.ndarray,
             "hold_sec": int(secs[exit_idx] - secs[0])}
 
 
+def simulate_one_amm(prices: np.ndarray, secs: np.ndarray,
+                      instant_p: float, with60s_p: float | None) -> dict:
+    """AMM bonding-curve fill model. Tracks tokens held, not just SOL.
+
+    Buys/sells route through the constant-product curve K = 30*1.073e9.
+    Includes the 1% protocol fee on each side. Holds tokens between entries
+    and the final exit. Realistic per-trade impact is implicit in fill size.
+    """
+    from amm import buy_fill, sell_fill
+    if instant_p < BUY_THRESHOLD:
+        return {"action": "skip", "pnl_sol": 0.0, "size_sol": 0.0, "exit_reason": "no_buy"}
+
+    # stage 1: probe buy at slot 0
+    f0 = buy_fill(prices[0], PROBE_SIZE)
+    if f0.tokens <= 0:
+        return {"action": "skip", "pnl_sol": 0.0, "size_sol": 0.0, "exit_reason": "no_fill"}
+    sol_spent = PROBE_SIZE
+    tokens_held = f0.tokens
+
+    idx_60 = int(np.searchsorted(secs, 60, side="left"))
+    idx_60 = min(idx_60, len(prices) - 1)
+
+    if with60s_p is not None and idx_60 < len(prices) - 1:
+        if with60s_p < ABORT_THRESHOLD:
+            sf = sell_fill(prices[idx_60], tokens_held)
+            sol_out = sf.tokens
+            pnl = sol_out - sol_spent
+            return {"action": "abort_60s", "pnl_sol": pnl, "size_sol": sol_spent,
+                    "exit_reason": "abort_60s",
+                    "entry_price": prices[0], "exit_price": prices[idx_60],
+                    "hold_sec": int(secs[idx_60] - secs[0])}
+        if with60s_p >= SCALE_THRESHOLD:
+            scale_add = FULL_SIZE - PROBE_SIZE
+            f1 = buy_fill(prices[idx_60], scale_add)
+            sol_spent += scale_add
+            tokens_held += f1.tokens
+
+    start = idx_60 if (with60s_p is not None and with60s_p >= SCALE_THRESHOLD) else 0
+    exit_idx, raw_exit, reason = trailing_30_exit(prices, secs, start)
+    sf = sell_fill(raw_exit, tokens_held)
+    sol_out = sf.tokens
+    pnl = sol_out - sol_spent
+    return {"action": "full" if sol_spent == FULL_SIZE else "probe_only",
+            "pnl_sol": pnl, "size_sol": sol_spent,
+            "exit_reason": reason,
+            "entry_price": prices[0], "exit_price": raw_exit,
+            "hold_sec": int(secs[exit_idx] - secs[0])}
+
+
+# default sim variant — toggle via env or arg later if needed
+simulate_one = simulate_one_flat
+
+
 def main():
-    tids_inst, y_inst, p_inst = load_oof("instant")
+    import sys
+    fill_mode = "amm" if "--amm" in sys.argv else "flat"
+    sim_fn = simulate_one_amm if fill_mode == "amm" else simulate_one_flat
+    print(f"[2stage] fill_mode = {fill_mode}")
+    # Stage-1 model: prefer `meta` (pre-buy AUC ~0.80) over `instant` (~0.77).
+    stage1_name = "meta" if (ART / "meta__token_ids.npy").exists() else "instant"
+    print(f"[2stage] stage-1 model = {stage1_name}")
+    tids_inst, y_inst, p_inst = load_oof(stage1_name)
     tids_60, y_60, p_60 = load_oof("with60s")
 
     inst_map = dict(zip(tids_inst.tolist(), p_inst.tolist()))
@@ -116,11 +174,12 @@ def main():
 
     # only buys
     buy_ids = [t for t, p in inst_map.items() if p >= BUY_THRESHOLD]
-    print(f"[2stage] {len(buy_ids)} buy candidates (instant p ≥ {BUY_THRESHOLD})")
+    print(f"[2stage] {len(buy_ids)} buy candidates ({stage1_name} p ≥ {BUY_THRESHOLD})")
     rng = np.random.default_rng(42)
-    if len(buy_ids) > 5000:
-        buy_ids = rng.choice(buy_ids, 5000, replace=False).tolist()
-        print(f"[2stage] capped to 5000 for sim tractability")
+    cap = 20_000
+    if len(buy_ids) > cap:
+        buy_ids = rng.choice(buy_ids, cap, replace=False).tolist()
+        print(f"[2stage] capped to {cap} for sim tractability")
 
     print("[2stage] loading panels…")
     panels_lf = pl.scan_parquet(SLOTS).filter(
@@ -140,7 +199,7 @@ def main():
         panel = panels[tid].sort("seconds_since_deploy")
         prices = panel["price_sol_per_token"].to_numpy()
         secs = panel["seconds_since_deploy"].to_numpy()
-        out = simulate_one(prices, secs, inst_map[tid], p60_map.get(tid))
+        out = sim_fn(prices, secs, inst_map[tid], p60_map.get(tid))
         out["token_id"] = int(tid)
         out["instant_p"] = float(inst_map[tid])
         out["with60s_p"] = float(p60_map.get(tid, np.nan))
@@ -153,10 +212,12 @@ def main():
     print(f"[2stage] results: {len(results)}, sample={results[:2]}")
     pls = pl.DataFrame(norm, infer_schema_length=len(norm))
     print(f"[2stage] cols={pls.columns}")
-    pls.write_parquet(OUT / "trades.parquet")
+    trades_path = OUT / ("trades_amm.parquet" if fill_mode == "amm" else "trades.parquet")
+    pls.write_parquet(trades_path)
 
     pnls = pls["pnl_sol"].to_numpy()
     summary = {
+        "fill_mode": fill_mode,
         "n_candidates": len(buy_ids),
         "n_simulated": len(results),
         "actions": dict(pls["action"].value_counts().iter_rows()),
@@ -176,7 +237,8 @@ def main():
             "entry_slip_bps": ENTRY_SLIPPAGE_BPS, "exit_slip_bps": EXIT_SLIPPAGE_BPS,
         },
     }
-    (OUT / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
+    summary_path = OUT / ("summary_amm.json" if fill_mode == "amm" else "summary.json")
+    summary_path.write_text(json.dumps(summary, indent=2, default=str))
     print(json.dumps(summary, indent=2, default=str))
 
 

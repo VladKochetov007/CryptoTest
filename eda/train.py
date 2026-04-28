@@ -4,7 +4,8 @@ Two models per algorithm:
   - PART1_INSTANT: deploy-time-only features (≤300 ms latency budget)
   - PART1_60S:     deploy-time + 60-second post-launch aggregates (2-stage policy)
 
-Walk-forward: 5 expanding-window folds. Embargo 1 hour to prevent label leakage.
+Walk-forward: 5 expanding-window folds. Embargo 3600 s (>= 1800 s label window)
+to prevent label leakage at fold boundaries.
 Saves: per-fold AUC/PR-AUC, OOF probabilities, feature importance, models.
 """
 from __future__ import annotations
@@ -78,15 +79,29 @@ def load_dataset(feature_set: list[str], target: str = "hit_2x") -> tuple[pl.Dat
     return df.select(["token_id", "deploy_time_unix", target] + cols), cols
 
 
-def walkforward_indices(n: int, n_folds: int = 5, embargo: int = 0) -> list[tuple[np.ndarray, np.ndarray]]:
-    """Expanding window. Embargo measured in row count (sorted by time)."""
+def walkforward_indices(
+    times: np.ndarray,
+    n_folds: int = 5,
+    embargo_sec: int = 3600,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Expanding-window walk-forward with a seconds-based embargo.
+
+    times: deploy_time_unix in ascending order, length n.
+    embargo_sec: minimum gap between train.max(time) and val.min(time).
+    A token's hit_2x label is observed at deploy_time + 1800 s, so embargo_sec
+    must be >= 1800 to prevent the label window from touching the next train fold.
+    """
+    n = len(times)
     edges = np.linspace(0, n, n_folds + 2, dtype=int)
     splits = []
     for k in range(n_folds):
-        train_end = edges[k + 1] - embargo
         val_start = edges[k + 1]
         val_end = edges[k + 2]
-        if train_end <= 0 or val_end - val_start <= 0:
+        if val_end - val_start <= 0:
+            continue
+        cutoff = times[val_start] - embargo_sec
+        train_end = int(np.searchsorted(times, cutoff, side="left"))
+        if train_end <= 0:
             continue
         splits.append((np.arange(0, train_end), np.arange(val_start, val_end)))
     return splits
@@ -219,7 +234,8 @@ def run(feature_set_name: str, feature_cols: list[str], algos: list[str]):
     n = df.height
     print(f"rows: {n}, base rate: {df['hit_2x'].mean():.4f}")
 
-    folds = walkforward_indices(n, n_folds=5, embargo=0)
+    times = df["deploy_time_unix"].to_numpy()
+    folds = walkforward_indices(times, n_folds=5, embargo_sec=3600)
     results: dict[str, list[FoldResult]] = {a: [] for a in algos}
     oof: dict[str, np.ndarray] = {a: np.full(n, np.nan) for a in algos}
     fold_models: dict[str, list] = {a: [] for a in algos}

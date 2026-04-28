@@ -297,9 +297,19 @@ def main():
     art_dir = ART / "instant__lgbm"
     selection_method = universe
     rng = np.random.default_rng(42)
-    if universe == "model_top" and (ART / "instant__token_ids.npy").exists() and (ART / "instant__lgbm" / "oof_pred.npy").exists():
-        token_ids = np.load(ART / "instant__token_ids.npy")
-        oof = np.load(ART / "instant__lgbm" / "oof_pred.npy")
+    if universe == "model_top":
+        # Prefer meta__lgbm OOF (pre-buy AUC 0.80) over instant__lgbm (0.77).
+        # Fall back to instant if meta artefacts not yet generated.
+        for fs in ("meta", "instant"):
+            tid_path = ART / f"{fs}__token_ids.npy"
+            oof_path = ART / f"{fs}__lgbm" / "oof_pred.npy"
+            if tid_path.exists() and oof_path.exists():
+                print(f"[buys] universe model_top sourced from {fs}__lgbm OOF")
+                token_ids = np.load(tid_path)
+                oof = np.load(oof_path)
+                break
+        else:
+            raise RuntimeError("model_top requested but no OOF artefacts found")
         mask = ~np.isnan(oof)
         token_ids, oof = token_ids[mask], oof[mask]
         thresh = np.quantile(oof, 0.9)

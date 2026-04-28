@@ -11,8 +11,8 @@
     "median_dd": -0.0534688560379154,
     "worst_dd": -0.9972040992438977,
     "exit_reasons": {
-      "tp_2x": 802,
-      "timeout": 4198
+      "timeout": 4198,
+      "tp_2x": 802
     }
   },
   "tp_2x_sl_50": {
@@ -27,9 +27,9 @@
     "median_dd": -0.0534688560379154,
     "worst_dd": -0.9972040992438977,
     "exit_reasons": {
-      "tp_2x": 759,
+      "timeout": 3553,
       "sl_50": 688,
-      "timeout": 3553
+      "tp_2x": 759
     }
   },
   "trailing_30": {
@@ -45,8 +45,8 @@
     "worst_dd": -0.9972040992438977,
     "exit_reasons": {
       "sl_60": 430,
-      "trail": 1249,
-      "timeout": 3321
+      "timeout": 3321,
+      "trail": 1249
     }
   },
   "deployer_sell_exit": {
@@ -61,9 +61,9 @@
     "median_dd": -0.08196713283557439,
     "worst_dd": -0.9972040992438977,
     "exit_reasons": {
-      "sl_50": 764,
+      "timeout": 3869,
       "tp_3x": 367,
-      "timeout": 3869
+      "sl_50": 764
     }
   },
   "vol_stagnation_10": {
@@ -78,10 +78,10 @@
     "median_dd": -0.045911143584730196,
     "worst_dd": -0.9972040992438977,
     "exit_reasons": {
-      "tp_2x": 709,
-      "vol_stagnation": 275,
+      "timeout": 3344,
       "sl_50": 672,
-      "timeout": 3344
+      "vol_stagnation": 275,
+      "tp_2x": 709
     }
   },
   "sell_pressure_5": {
@@ -96,10 +96,10 @@
     "median_dd": -0.023319379871759416,
     "worst_dd": -0.9972040992438977,
     "exit_reasons": {
-      "sell_pressure": 991,
+      "timeout": 2721,
       "tp_2x": 690,
-      "sl_50": 598,
-      "timeout": 2721
+      "sell_pressure": 991,
+      "sl_50": 598
     }
   }
 }

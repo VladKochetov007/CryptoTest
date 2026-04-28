@@ -56,6 +56,13 @@ META_FEATURES = [
     "deployer_hr_1h", "deployer_hr_24h", "deployer_hr_7d",
     # multi-scale funder
     "funder_prior_n_24h", "funder_hr_24h",
+    "funder_prior_n_7d", "funder_hr_7d",
+    # funder graph
+    "funder_seconds_since_last", "funder_unique_deployers_prior",
+    "funder_concentration_hhi", "funder_avg_deposit_sol_prior",
+    "funder_is_dust_funder",
+    # handle sybil
+    "handle_unique_deployers_7d",
     # twitter handle static
     "handle_len", "handle_digit_ratio", "handle_has_underscore",
     "handle_ends_in_digits", "handle_is_celeb", "handle_contains_ticker",
@@ -75,11 +82,25 @@ META_FEATURES = [
 CAT_COL = "deployer_wallet_source_cex_name"
 
 
-def walkforward_splits(n: int, n_folds: int = 5) -> list[tuple[np.ndarray, np.ndarray]]:
+def walkforward_splits(
+    times: np.ndarray,
+    n_folds: int = 5,
+    embargo_sec: int = 3600,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Time-aware walk-forward identical to train.walkforward_indices."""
+    n = len(times)
     edges = np.linspace(0, n, n_folds + 2, dtype=int)
     splits = []
     for k in range(n_folds):
-        splits.append((np.arange(0, edges[k + 1]), np.arange(edges[k + 1], edges[k + 2])))
+        val_start = edges[k + 1]
+        val_end = edges[k + 2]
+        if val_end - val_start <= 0:
+            continue
+        cutoff = times[val_start] - embargo_sec
+        train_end = int(np.searchsorted(times, cutoff, side="left"))
+        if train_end <= 0:
+            continue
+        splits.append((np.arange(0, train_end), np.arange(val_start, val_end)))
     return splits
 
 
@@ -112,7 +133,8 @@ def main():
         print(f"  [warn] missing columns: {missing}")
 
     n = df.height
-    splits = walkforward_splits(n)
+    times = df["deploy_time_unix"].to_numpy()
+    splits = walkforward_splits(times, n_folds=5, embargo_sec=3600)
     oof = np.full(n, np.nan)
     fold_aucs = []
 
@@ -189,6 +211,9 @@ def main():
         print("  [skip] shap not installed")
 
     np.save(ART / "oof_pred.npy", oof)
+    booster.save_model(str(ART / "model_last.txt"))
+    np.save(ART.parent / "meta__token_ids.npy", df["token_id"].to_numpy())
+    np.save(ART.parent / "meta__y.npy", df["hit_2x"].to_numpy().astype(int))
     summary = {
         "feature_set": "meta",
         "algo": "lgbm",
@@ -199,6 +224,7 @@ def main():
         "baseline_oof_auc": 0.7653,
         "delta_auc": oof_auc - 0.7653,
         "fold_aucs": fold_aucs,
+        "features": cols,
     }
     (ART / "summary.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary, indent=2))

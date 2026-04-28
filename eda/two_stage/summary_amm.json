@@ -1,0 +1,33 @@
+{
+  "fill_mode": "amm",
+  "n_candidates": 20000,
+  "n_simulated": 20000,
+  "actions": {
+    "full": 3673,
+    "abort_60s": 3264,
+    "probe_only": 13063
+  },
+  "exit_reasons": {
+    "sl_60": 3393,
+    "timeout": 8616,
+    "trail": 4727,
+    "abort_60s": 3264
+  },
+  "total_pnl_sol": -68.25684803526232,
+  "mean_pnl_sol": -0.003412842401763116,
+  "median_pnl_sol": -0.014432581898356646,
+  "win_rate": 0.29015,
+  "p10_pnl_sol": -0.14155502502626652,
+  "p90_pnl_sol": 0.06545021708618828,
+  "worst_pnl_sol": -0.8229837362098116,
+  "best_pnl_sol": 25.492774252978887,
+  "params": {
+    "probe_size_sol": 0.1,
+    "full_size_sol": 1.0,
+    "buy_threshold": 0.39,
+    "scale_threshold": 0.85,
+    "abort_threshold": 0.3,
+    "entry_slip_bps": 100,
+    "exit_slip_bps": 100
+  }
+}

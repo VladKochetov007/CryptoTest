@@ -77,14 +77,17 @@ def compute_rolling_group_features(
         hits = hits[order]
         tids = tids[order]
 
-        # cum_hits[i] = sum of hits[0..i-1] (exclusive — hits before position i)
-        cum_hits = np.concatenate([[0], np.cumsum(hits[:-1])]) if len(hits) > 1 else np.array([0])
+        # cum_full[k] = sum(hits[0..k-1]); length N+1 so cum_full[hi] is always valid.
+        # hi[i] = first index where times[j] >= times[i] — strictly excludes self AND
+        # all same-second peers (preventing tie-time label leakage in this group).
+        cum_full = np.concatenate([[0], np.cumsum(hits)])
+        hi = np.searchsorted(times, times, side="left")
 
         for wi, (w_name, w) in enumerate(zip(w_names, w_secs)):
             lo = np.searchsorted(times, times - w, side="left")
-            prior_n = np.arange(len(times)) - lo
-            prior_hits_arr = cum_hits - np.where(lo > 0, cum_hits[np.minimum(lo, len(cum_hits) - 1)], 0)
-            hit_rate = np.where(prior_n > 0, prior_hits_arr / prior_n, np.nan)
+            prior_n = hi - lo
+            prior_hits_arr = cum_full[hi] - cum_full[lo]
+            hit_rate = np.where(prior_n > 0, prior_hits_arr / np.maximum(prior_n, 1), np.nan)
             for i, tid in enumerate(tids):
                 records_n[wi][int(tid)] = int(prior_n[i])
                 records_hr[wi][int(tid)] = float(hit_rate[i])
@@ -104,6 +107,145 @@ def compute_rolling_group_features(
             dtype=pl.Float64,
         ))
     return pl.DataFrame(cols)
+
+
+def funder_graph_features(feat: pl.DataFrame, tokens: pl.DataFrame) -> pl.DataFrame:
+    """Past-only graph features keyed on `deployer_wallet_source`.
+
+    For each token at time t with funder F:
+      funder_seconds_since_last  — t - max(prior_t) for this F (NaN if none).
+      funder_unique_deployers_prior — distinct deployer addresses funded by F before t.
+      funder_concentration_hhi      — Σ pᵢ² over deployer share distribution before t,
+                                       where pᵢ = (#tokens by deployer i) / (total prior tokens).
+      funder_avg_deposit_sol_prior  — mean deployer_wallet_source_amount_sol funded by F before t.
+      funder_is_dust_funder         — 1 if amount<0.5 SOL AND prior_n>5.
+
+    Time-respecting (strict <), tie-safe via stable sort + searchsorted side="left".
+    """
+    src = (
+        feat.select("token_id", "deployer_address", "deploy_time_unix")
+        .join(
+            tokens.select("token_id", "deployer_wallet_source",
+                          "deployer_wallet_source_amount_sol"),
+            on="token_id", how="left",
+        )
+        .drop_nulls(["deployer_wallet_source"])
+    )
+
+    groups = src.group_by("deployer_wallet_source").agg(
+        pl.col("token_id").alias("tids"),
+        pl.col("deployer_address").alias("deps"),
+        pl.col("deploy_time_unix").alias("times"),
+        pl.col("deployer_wallet_source_amount_sol").alias("amts"),
+    )
+
+    rec_secs: dict[int, float] = {}
+    rec_unique: dict[int, int] = {}
+    rec_hhi: dict[int, float] = {}
+    rec_amt: dict[int, float] = {}
+    rec_dust: dict[int, int] = {}
+
+    for row in groups.iter_rows(named=True):
+        tids = np.asarray(row["tids"], dtype=np.int64)
+        deps = np.asarray(row["deps"])
+        times = np.asarray(row["times"], dtype=np.int64)
+        amts = np.asarray(row["amts"], dtype=np.float64)
+
+        order = np.argsort(times, kind="stable")
+        tids = tids[order]; deps = deps[order]; times = times[order]; amts = amts[order]
+        n_grp = len(tids)
+        hi = np.searchsorted(times, times, side="left")  # excludes self + same-second peers
+
+        # bookkeeping per deployer count
+        from collections import defaultdict
+        counter: dict[str, int] = defaultdict(int)
+        cum_amt = 0.0
+        cum_n_prior = 0
+        unique_so_far = 0
+        sumsq = 0.0  # Σ count_i^2 — used to derive HHI lazily
+        last_seen_time: int | None = None
+        # iterate in order. At step i, the "prior" snapshot is whatever we observed
+        # in steps [0..hi[i] - 1]. To stay strict-time-precedes-self even for ties,
+        # we snapshot AFTER catching up to hi[i] tokens — not after step i-1.
+        snapshot_idx = 0
+        for i in range(n_grp):
+            target = hi[i]
+            while snapshot_idx < target:
+                d = deps[snapshot_idx]
+                prev = counter[d]
+                counter[d] = prev + 1
+                if prev == 0:
+                    unique_so_far += 1
+                # Σ c_i^2 update from (prev)^2 to (prev+1)^2 = prev^2 + 2*prev + 1
+                sumsq += 2 * prev + 1
+                if not np.isnan(amts[snapshot_idx]):
+                    cum_amt += float(amts[snapshot_idx])
+                cum_n_prior += 1
+                last_seen_time = int(times[snapshot_idx])
+                snapshot_idx += 1
+            tid = int(tids[i])
+            rec_secs[tid] = float(times[i] - last_seen_time) if last_seen_time is not None else np.nan
+            rec_unique[tid] = int(unique_so_far)
+            if cum_n_prior > 0:
+                hhi = sumsq / (cum_n_prior * cum_n_prior)
+                rec_hhi[tid] = float(hhi)
+                rec_amt[tid] = float(cum_amt / cum_n_prior)
+            else:
+                rec_hhi[tid] = float("nan")
+                rec_amt[tid] = float("nan")
+            this_amt = amts[i]
+            rec_dust[tid] = int(
+                (not np.isnan(this_amt)) and (this_amt < 0.5) and (cum_n_prior > 5)
+            )
+
+    all_tids = feat["token_id"].to_list()
+    cols = [
+        pl.Series("token_id", all_tids, dtype=pl.Int32),
+        pl.Series("funder_seconds_since_last",
+                  [rec_secs.get(t, float("nan")) for t in all_tids], dtype=pl.Float64),
+        pl.Series("funder_unique_deployers_prior",
+                  [rec_unique.get(t, 0) for t in all_tids], dtype=pl.Int32),
+        pl.Series("funder_concentration_hhi",
+                  [rec_hhi.get(t, float("nan")) for t in all_tids], dtype=pl.Float64),
+        pl.Series("funder_avg_deposit_sol_prior",
+                  [rec_amt.get(t, float("nan")) for t in all_tids], dtype=pl.Float64),
+        pl.Series("funder_is_dust_funder",
+                  [rec_dust.get(t, 0) for t in all_tids], dtype=pl.Int8),
+    ]
+    return pl.DataFrame(cols)
+
+
+def twitter_handle_reuse_features(feat: pl.DataFrame, tokens: pl.DataFrame) -> pl.DataFrame:
+    """Past-only sybil signal: distinct deployer count using same twitter_handle in last 7d."""
+    src = (
+        feat.select("token_id", "deployer_address", "deploy_time_unix")
+        .join(tokens.select("token_id", "twitter_handle"), on="token_id", how="left")
+        .drop_nulls(["twitter_handle"])
+    )
+    groups = src.group_by("twitter_handle").agg(
+        pl.col("token_id").alias("tids"),
+        pl.col("deployer_address").alias("deps"),
+        pl.col("deploy_time_unix").alias("times"),
+    )
+    out: dict[int, int] = {}
+    w = 604_800
+    for row in groups.iter_rows(named=True):
+        tids = np.asarray(row["tids"], dtype=np.int64)
+        deps = np.asarray(row["deps"])
+        times = np.asarray(row["times"], dtype=np.int64)
+        order = np.argsort(times, kind="stable")
+        tids = tids[order]; deps = deps[order]; times = times[order]
+        hi = np.searchsorted(times, times, side="left")
+        lo = np.searchsorted(times, times - w, side="left")
+        for i, tid in enumerate(tids):
+            window_deps = deps[lo[i]:hi[i]]
+            out[int(tid)] = int(len(set(window_deps.tolist())))
+    all_tids = feat["token_id"].to_list()
+    return pl.DataFrame([
+        pl.Series("token_id", all_tids, dtype=pl.Int32),
+        pl.Series("handle_unique_deployers_7d",
+                  [out.get(t, 0) for t in all_tids], dtype=pl.Int32),
+    ])
 
 
 def twitter_handle_features(tokens: pl.DataFrame) -> pl.DataFrame:
@@ -243,7 +385,7 @@ def main():
     )
     tokens = pl.read_parquet(TOKENS).select(
         "token_id", "name", "ticker", "description", "twitter_handle",
-        "deployer_wallet_source",
+        "deployer_wallet_source", "deployer_wallet_source_amount_sol",
     )
     feat_full = feat.join(
         tokens.select("token_id", "deployer_wallet_source", "twitter_handle"),
@@ -264,7 +406,7 @@ def main():
     print("[meta] multi-scale funder features (2 windows)")
     ms_fund = compute_rolling_group_features(
         feat_full, "deployer_wallet_source", "hit_2x",
-        {"24h": 86400, "7d": 604800}, "funder"
+        {"24h": 86_400, "7d": 604_800}, "funder"
     )
     print(f"       {ms_fund.shape} in {time.time()-t0:.1f}s")
 
@@ -285,9 +427,20 @@ def main():
     meme_roll = meme_kw_rolling_win_rate(feat, name_feat)
     print(f"       {meme_roll.shape}")
 
+    t0 = time.time()
+    print("[meta] funder graph features (unique deployers, hhi, dust, recency)")
+    fund_graph = funder_graph_features(feat, tokens)
+    print(f"       {fund_graph.shape} in {time.time()-t0:.1f}s")
+
+    t0 = time.time()
+    print("[meta] twitter handle deployer-reuse 7d")
+    handle_reuse = twitter_handle_reuse_features(feat, tokens)
+    print(f"       {handle_reuse.shape} in {time.time()-t0:.1f}s")
+
     print("[meta] joining all features")
     base = feat.select("token_id")
-    for df in [ms_dep, ms_fund, ms_handle_roll, handle_static, desc_feat, name_feat, meme_roll]:
+    for df in [ms_dep, ms_fund, ms_handle_roll, handle_static, desc_feat,
+                name_feat, meme_roll, fund_graph, handle_reuse]:
         base = base.join(df, on="token_id", how="left")
 
     out_path = OUT / "meta_features.parquet"

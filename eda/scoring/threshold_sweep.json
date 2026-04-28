@@ -10,701 +10,701 @@
     },
     {
       "threshold": 0.01,
-      "n_selected": 360148,
-      "selection_rate": 0.9190262325201592,
-      "precision": 0.1804341548474516,
-      "lift": 1.0870042060849412
+      "n_selected": 343661,
+      "selection_rate": 0.8769546800040828,
+      "precision": 0.18884016516276214,
+      "lift": 1.1376452201261085
     },
     {
       "threshold": 0.02,
-      "n_selected": 353786,
-      "selection_rate": 0.9027916709196693,
-      "precision": 0.18342161645740646,
-      "lift": 1.1050018148984373
+      "n_selected": 331635,
+      "selection_rate": 0.846266714300296,
+      "precision": 0.1950970193134018,
+      "lift": 1.1753388972703023
     },
     {
       "threshold": 0.03,
-      "n_selected": 344020,
-      "selection_rate": 0.8778707767683985,
-      "precision": 0.187951281902215,
-      "lift": 1.132290248148934
+      "n_selected": 320881,
+      "selection_rate": 0.8188246401959783,
+      "precision": 0.20082522804404124,
+      "lift": 1.2098478126627448
     },
     {
       "threshold": 0.04,
-      "n_selected": 335866,
-      "selection_rate": 0.8570633867510462,
-      "precision": 0.19166870120821994,
-      "lift": 1.154685400689899
+      "n_selected": 297754,
+      "selection_rate": 0.7598091252424212,
+      "precision": 0.213740201642967,
+      "lift": 1.2876525422350216
     },
     {
       "threshold": 0.05,
-      "n_selected": 313745,
-      "selection_rate": 0.8006149841788303,
-      "precision": 0.20206537155970614,
-      "lift": 1.2173189104646904
+      "n_selected": 274289,
+      "selection_rate": 0.6999311013575584,
+      "precision": 0.2282701821801093,
+      "lift": 1.3751866899220777
     },
     {
       "threshold": 0.06,
-      "n_selected": 299355,
-      "selection_rate": 0.7638945595590487,
-      "precision": 0.209112926124501,
-      "lift": 1.2597760686508548
+      "n_selected": 263480,
+      "selection_rate": 0.6723486781667858,
+      "precision": 0.23539547593745255,
+      "lift": 1.4181121786709852
     },
     {
       "threshold": 0.07,
-      "n_selected": 290886,
-      "selection_rate": 0.7422833520465448,
-      "precision": 0.2133241201020331,
-      "lift": 1.2851459082473942
+      "n_selected": 249408,
+      "selection_rate": 0.6364397264468715,
+      "precision": 0.24493600846805236,
+      "lift": 1.4755879874934337
     },
     {
       "threshold": 0.08,
-      "n_selected": 281112,
-      "selection_rate": 0.7173420434826988,
-      "precision": 0.21824397393209824,
-      "lift": 1.314784985234372
+      "n_selected": 237536,
+      "selection_rate": 0.6061447381851587,
+      "precision": 0.2533973797655934,
+      "lift": 1.526562517218416
     },
     {
       "threshold": 0.09,
-      "n_selected": 259050,
-      "selection_rate": 0.6610441972032255,
-      "precision": 0.22979733642154024,
-      "lift": 1.384386849865074
+      "n_selected": 231674,
+      "selection_rate": 0.5911860773706237,
+      "precision": 0.25769400105320406,
+      "lift": 1.5524470035316393
     },
     {
       "threshold": 0.1,
-      "n_selected": 245161,
-      "selection_rate": 0.6256022251709707,
-      "precision": 0.23739093901558567,
-      "lift": 1.4301336097622979
+      "n_selected": 218869,
+      "selection_rate": 0.558510258242319,
+      "precision": 0.2672054973522975,
+      "lift": 1.6097478870146864
     },
     {
       "threshold": 0.11,
-      "n_selected": 227688,
-      "selection_rate": 0.5810145963049913,
-      "precision": 0.24750975018446295,
-      "lift": 1.4910931897844293
+      "n_selected": 198096,
+      "selection_rate": 0.5055016841890375,
+      "precision": 0.28411982069299735,
+      "lift": 1.711646225663297
     },
     {
       "threshold": 0.12,
-      "n_selected": 211471,
-      "selection_rate": 0.5396320302133306,
-      "precision": 0.2577043660832927,
-      "lift": 1.5525094464283964
+      "n_selected": 193112,
+      "selection_rate": 0.4927835051546392,
+      "precision": 0.2884077633704793,
+      "lift": 1.7374784287171736
     },
     {
       "threshold": 0.13,
-      "n_selected": 197931,
-      "selection_rate": 0.5050806369296723,
-      "precision": 0.2666383739788108,
-      "lift": 1.6063313193871755
+      "n_selected": 182088,
+      "selection_rate": 0.4646524446259059,
+      "precision": 0.29815803347831815,
+      "lift": 1.7962177767449665
     },
     {
       "threshold": 0.14,
-      "n_selected": 189292,
-      "selection_rate": 0.48303562314994386,
-      "precision": 0.27279018659003024,
-      "lift": 1.6433921862119487
+      "n_selected": 173976,
+      "selection_rate": 0.44395223027457387,
+      "precision": 0.30555363958247117,
+      "lift": 1.8407717302276563
     },
     {
       "threshold": 0.15,
-      "n_selected": 172637,
-      "selection_rate": 0.44053536796978665,
-      "precision": 0.28507214560030586,
-      "lift": 1.7173833943311636
+      "n_selected": 173849,
+      "selection_rate": 0.44362815147494133,
+      "precision": 0.3056733141979534,
+      "lift": 1.8414926957815492
     },
     {
       "threshold": 0.16,
-      "n_selected": 160413,
-      "selection_rate": 0.40934214555476167,
-      "precision": 0.29507583549961663,
-      "lift": 1.7776494398928464
+      "n_selected": 173265,
+      "selection_rate": 0.44213789935694603,
+      "precision": 0.30619571177098664,
+      "lift": 1.8446398181188681
     },
     {
       "threshold": 0.17,
-      "n_selected": 155244,
-      "selection_rate": 0.3961518832295601,
-      "precision": 0.2995156012470691,
-      "lift": 1.804396283058947
+      "n_selected": 152868,
+      "selection_rate": 0.3900888026947025,
+      "precision": 0.325588089070309,
+      "lift": 1.9614668994891957
     },
     {
       "threshold": 0.18,
-      "n_selected": 132972,
-      "selection_rate": 0.3393181586199857,
-      "precision": 0.32013506602893843,
-      "lift": 1.9286158077052744
+      "n_selected": 152794,
+      "selection_rate": 0.3898999693783811,
+      "precision": 0.32566069348272836,
+      "lift": 1.9619042961769066
     },
     {
       "threshold": 0.19,
-      "n_selected": 129944,
-      "selection_rate": 0.33159130346024296,
-      "precision": 0.323339284614911,
-      "lift": 1.9479192432611006
+      "n_selected": 138316,
+      "selection_rate": 0.3529549862202715,
+      "precision": 0.34071980103531047,
+      "lift": 2.052626106930429
     },
     {
       "threshold": 0.2,
-      "n_selected": 126200,
-      "selection_rate": 0.32203735837501274,
-      "precision": 0.32710776545166403,
-      "lift": 1.9706220099493936
+      "n_selected": 136782,
+      "selection_rate": 0.3490405226089619,
+      "precision": 0.3423988536503341,
+      "lift": 2.062741360643406
     },
     {
       "threshold": 0.21,
-      "n_selected": 112003,
-      "selection_rate": 0.28580943145860976,
-      "precision": 0.34239261448354064,
-      "lift": 2.0627037735216516
+      "n_selected": 130524,
+      "selection_rate": 0.33307134837195057,
+      "precision": 0.3489396586068462,
+      "lift": 2.102145665803485
     },
     {
       "threshold": 0.22,
-      "n_selected": 100880,
-      "selection_rate": 0.25742574257425743,
-      "precision": 0.356631641554322,
-      "lift": 2.148485106493685
+      "n_selected": 120193,
+      "selection_rate": 0.3067086863325508,
+      "precision": 0.3602372850332382,
+      "lift": 2.170206878796375
     },
     {
       "threshold": 0.23,
-      "n_selected": 99367,
-      "selection_rate": 0.25356486679595797,
-      "precision": 0.3585798101985569,
-      "lift": 2.1602216178666924
+      "n_selected": 115817,
+      "selection_rate": 0.29554200265387365,
+      "precision": 0.3654903856946735,
+      "lift": 2.2018535618691857
     },
     {
       "threshold": 0.24,
-      "n_selected": 92107,
-      "selection_rate": 0.23503878738389303,
-      "precision": 0.3683107689969275,
-      "lift": 2.2188446271966664
+      "n_selected": 109426,
+      "selection_rate": 0.27923343880779833,
+      "precision": 0.37302834792462486,
+      "lift": 2.2472651229796305
     },
     {
       "threshold": 0.25,
-      "n_selected": 92107,
-      "selection_rate": 0.23503878738389303,
-      "precision": 0.3683107689969275,
-      "lift": 2.2188446271966664
+      "n_selected": 104598,
+      "selection_rate": 0.26691334081861795,
+      "precision": 0.3788026539704392,
+      "lift": 2.2820517461903447
     },
     {
       "threshold": 0.26,
-      "n_selected": 83738,
-      "selection_rate": 0.21368276002858017,
-      "precision": 0.37956483317012585,
-      "lift": 2.2866434045520903
+      "n_selected": 95371,
+      "selection_rate": 0.2433678677146065,
+      "precision": 0.39056946031812606,
+      "lift": 2.3529394780775608
     },
     {
       "threshold": 0.27,
-      "n_selected": 77414,
-      "selection_rate": 0.1975451668878228,
-      "precision": 0.38898648823210275,
-      "lift": 2.3434030501375336
+      "n_selected": 89835,
+      "selection_rate": 0.22924109421251404,
+      "precision": 0.3983525352034285,
+      "lift": 2.3998276913637344
     },
     {
       "threshold": 0.28,
-      "n_selected": 64707,
-      "selection_rate": 0.16511942431356538,
-      "precision": 0.4109756286027787,
-      "lift": 2.4758740232264436
+      "n_selected": 78118,
+      "selection_rate": 0.19934163519444728,
+      "precision": 0.4165237205253591,
+      "lift": 2.50929784623096
     },
     {
       "threshold": 0.29,
-      "n_selected": 64437,
-      "selection_rate": 0.16443043788914974,
-      "precision": 0.4114871890373543,
-      "lift": 2.478955858506025
+      "n_selected": 75406,
+      "selection_rate": 0.19242114933142798,
+      "precision": 0.42121316606105613,
+      "lift": 2.5375488557242494
     },
     {
       "threshold": 0.3,
-      "n_selected": 50599,
-      "selection_rate": 0.12911860773706238,
-      "precision": 0.442518626850333,
-      "lift": 2.6659010821090026
+      "n_selected": 73523,
+      "selection_rate": 0.1876161069715219,
+      "precision": 0.4245338193490472,
+      "lift": 2.557553738358847
     },
     {
       "threshold": 0.31,
-      "n_selected": 50000,
-      "selection_rate": 0.1275900785954884,
-      "precision": 0.44418,
-      "lift": 2.675909827975834
+      "n_selected": 64815,
+      "selection_rate": 0.16539501888333163,
+      "precision": 0.4401913137391036,
+      "lift": 2.651880459777705
     },
     {
       "threshold": 0.32,
-      "n_selected": 45314,
-      "selection_rate": 0.11563233642951924,
-      "precision": 0.4577393300083859,
-      "lift": 2.7575964064579974
+      "n_selected": 64815,
+      "selection_rate": 0.16539501888333163,
+      "precision": 0.4401913137391036,
+      "lift": 2.651880459777705
     },
     {
       "threshold": 0.33,
-      "n_selected": 42483,
-      "selection_rate": 0.10840818617944269,
-      "precision": 0.4665160181719747,
-      "lift": 2.810470525315277
+      "n_selected": 59679,
+      "selection_rate": 0.15228896601000305,
+      "precision": 0.4505269860419913,
+      "lift": 2.7141464940296633
     },
     {
       "threshold": 0.34,
-      "n_selected": 38574,
-      "selection_rate": 0.0984331938348474,
-      "precision": 0.47985689842899365,
-      "lift": 2.89084107913041
+      "n_selected": 51347,
+      "selection_rate": 0.13102735531285087,
+      "precision": 0.46855707246771966,
+      "lift": 2.8227666153000044
     },
     {
       "threshold": 0.35000000000000003,
-      "n_selected": 34329,
-      "selection_rate": 0.08760079616209043,
-      "precision": 0.4969850563663375,
-      "lift": 2.9940276389927645
+      "n_selected": 49552,
+      "selection_rate": 0.12644687149127284,
+      "precision": 0.47311914756215695,
+      "lift": 2.850250296648036
     },
     {
       "threshold": 0.36,
-      "n_selected": 28601,
-      "selection_rate": 0.07298407675819128,
-      "precision": 0.5249466801860074,
-      "lift": 3.162479131597605
+      "n_selected": 42050,
+      "selection_rate": 0.10730325609880575,
+      "precision": 0.49386444708680144,
+      "lift": 2.9752278978058966
     },
     {
       "threshold": 0.37,
-      "n_selected": 28232,
-      "selection_rate": 0.07204246197815657,
-      "precision": 0.5270969113063191,
-      "lift": 3.175432944437583
+      "n_selected": 42050,
+      "selection_rate": 0.10730325609880575,
+      "precision": 0.49386444708680144,
+      "lift": 2.9752278978058966
     },
     {
       "threshold": 0.38,
-      "n_selected": 26371,
-      "selection_rate": 0.0672935592528325,
-      "precision": 0.5381669257896933,
-      "lift": 3.2421229362244617
+      "n_selected": 32730,
+      "selection_rate": 0.08352046544860672,
+      "precision": 0.5283226397800184,
+      "lift": 3.182817200525659
     },
     {
       "threshold": 0.39,
-      "n_selected": 20356,
-      "selection_rate": 0.051944472797795245,
-      "precision": 0.5830713303202987,
-      "lift": 3.512644205536114
+      "n_selected": 32565,
+      "selection_rate": 0.0830994181892416,
+      "precision": 0.5290649470290189,
+      "lift": 3.1872891426729377
     },
     {
       "threshold": 0.4,
-      "n_selected": 20356,
-      "selection_rate": 0.051944472797795245,
-      "precision": 0.5830713303202987,
-      "lift": 3.512644205536114
+      "n_selected": 30925,
+      "selection_rate": 0.07891446361130959,
+      "precision": 0.5362328213419564,
+      "lift": 3.2304711529383368
     },
     {
       "threshold": 0.41000000000000003,
-      "n_selected": 19337,
-      "selection_rate": 0.04934418699601919,
-      "precision": 0.5922325076278637,
-      "lift": 3.567834633725457
+      "n_selected": 27308,
+      "selection_rate": 0.06968459732571196,
+      "precision": 0.5530979932620478,
+      "lift": 3.3320733846720363
     },
     {
       "threshold": 0.42,
-      "n_selected": 18453,
-      "selection_rate": 0.047088394406450955,
-      "precision": 0.6006611391101718,
-      "lift": 3.6186119263093075
+      "n_selected": 19432,
+      "selection_rate": 0.04958660814535062,
+      "precision": 0.6098188554960889,
+      "lift": 3.673781504585887
     },
     {
       "threshold": 0.43,
-      "n_selected": 16148,
-      "selection_rate": 0.04120649178319894,
-      "precision": 0.6257740896705475,
-      "lift": 3.7699019240894427
+      "n_selected": 18293,
+      "selection_rate": 0.04668010615494539,
+      "precision": 0.6214398950418193,
+      "lift": 3.7437910816305884
     },
     {
       "threshold": 0.44,
-      "n_selected": 13740,
-      "selection_rate": 0.035061753598040216,
-      "precision": 0.6586608442503639,
-      "lift": 3.968024283921853
+      "n_selected": 16479,
+      "selection_rate": 0.04205113810350107,
+      "precision": 0.6416651495843194,
+      "lift": 3.8656357333564406
     },
     {
       "threshold": 0.45,
-      "n_selected": 13740,
-      "selection_rate": 0.035061753598040216,
-      "precision": 0.6586608442503639,
-      "lift": 3.968024283921853
+      "n_selected": 14895,
+      "selection_rate": 0.038009084413595996,
+      "precision": 0.6630412890231622,
+      "lift": 3.9944137548985656
     },
     {
       "threshold": 0.46,
-      "n_selected": 11637,
-      "selection_rate": 0.029695314892313973,
-      "precision": 0.6954541548509066,
-      "lift": 4.189681228043064
+      "n_selected": 14895,
+      "selection_rate": 0.038009084413595996,
+      "precision": 0.6630412890231622,
+      "lift": 3.9944137548985656
     },
     {
       "threshold": 0.47000000000000003,
-      "n_selected": 11429,
-      "selection_rate": 0.02916454016535674,
-      "precision": 0.699623764108846,
-      "lift": 4.214800545419216
+      "n_selected": 14895,
+      "selection_rate": 0.038009084413595996,
+      "precision": 0.6630412890231622,
+      "lift": 3.9944137548985656
     },
     {
       "threshold": 0.48,
-      "n_selected": 11255,
-      "selection_rate": 0.028720526691844443,
-      "precision": 0.7030653043091959,
-      "lift": 4.235533696946728
+      "n_selected": 13731,
+      "selection_rate": 0.03503878738389303,
+      "precision": 0.6790474109678829,
+      "lift": 4.090840741749973
     },
     {
       "threshold": 0.49,
-      "n_selected": 10608,
-      "selection_rate": 0.027069511074818822,
-      "precision": 0.7164404223227753,
-      "lift": 4.316110512073194
+      "n_selected": 13731,
+      "selection_rate": 0.03503878738389303,
+      "precision": 0.6790474109678829,
+      "lift": 4.090840741749973
     },
     {
       "threshold": 0.5,
-      "n_selected": 10608,
-      "selection_rate": 0.027069511074818822,
-      "precision": 0.7164404223227753,
-      "lift": 4.316110512073194
+      "n_selected": 11592,
+      "selection_rate": 0.029580483821578032,
+      "precision": 0.7126466528640442,
+      "lift": 4.293255397075461
     },
     {
       "threshold": 0.51,
-      "n_selected": 10205,
-      "selection_rate": 0.026041135041339186,
-      "precision": 0.7248407643312101,
-      "lift": 4.366717378070603
+      "n_selected": 11454,
+      "selection_rate": 0.029228335204654485,
+      "precision": 0.715121354985158,
+      "lift": 4.3081639470488975
     },
     {
       "threshold": 0.52,
-      "n_selected": 10091,
-      "selection_rate": 0.025750229662141473,
-      "precision": 0.7271826379942523,
-      "lift": 4.380825718722618
+      "n_selected": 11454,
+      "selection_rate": 0.029228335204654485,
+      "precision": 0.715121354985158,
+      "lift": 4.3081639470488975
     },
     {
       "threshold": 0.53,
-      "n_selected": 10070,
-      "selection_rate": 0.025696641829131367,
-      "precision": 0.7276067527308838,
-      "lift": 4.383380747746757
+      "n_selected": 11157,
+      "selection_rate": 0.028470450137797285,
+      "precision": 0.7200860446356547,
+      "lift": 4.338073132128401
     },
     {
       "threshold": 0.54,
-      "n_selected": 10070,
-      "selection_rate": 0.025696641829131367,
-      "precision": 0.7276067527308838,
-      "lift": 4.383380747746757
+      "n_selected": 11157,
+      "selection_rate": 0.028470450137797285,
+      "precision": 0.7200860446356547,
+      "lift": 4.338073132128401
     },
     {
       "threshold": 0.55,
-      "n_selected": 8950,
-      "selection_rate": 0.022838624068592425,
-      "precision": 0.7510614525139665,
-      "lift": 4.524680810022802
+      "n_selected": 10895,
+      "selection_rate": 0.027801878125956924,
+      "precision": 0.724277191372189,
+      "lift": 4.363322199494742
     },
     {
       "threshold": 0.56,
-      "n_selected": 8950,
-      "selection_rate": 0.022838624068592425,
-      "precision": 0.7510614525139665,
-      "lift": 4.524680810022802
+      "n_selected": 9885,
+      "selection_rate": 0.02522455853832806,
+      "precision": 0.741831057157309,
+      "lift": 4.4690733858907326
     },
     {
       "threshold": 0.5700000000000001,
-      "n_selected": 7682,
-      "selection_rate": 0.01960293967541084,
-      "precision": 0.7820879979172091,
-      "lift": 4.711596559882487
+      "n_selected": 9885,
+      "selection_rate": 0.02522455853832806,
+      "precision": 0.741831057157309,
+      "lift": 4.4690733858907326
     },
     {
       "threshold": 0.58,
-      "n_selected": 7682,
-      "selection_rate": 0.01960293967541084,
-      "precision": 0.7820879979172091,
-      "lift": 4.711596559882487
+      "n_selected": 9365,
+      "selection_rate": 0.02389762172093498,
+      "precision": 0.7512012813667912,
+      "lift": 4.525523192393705
     },
     {
       "threshold": 0.59,
-      "n_selected": 7682,
-      "selection_rate": 0.01960293967541084,
-      "precision": 0.7820879979172091,
-      "lift": 4.711596559882487
+      "n_selected": 9053,
+      "selection_rate": 0.023101459630499133,
+      "precision": 0.7569866342648846,
+      "lift": 4.560376366058248
     },
     {
       "threshold": 0.6,
-      "n_selected": 7682,
-      "selection_rate": 0.01960293967541084,
-      "precision": 0.7820879979172091,
-      "lift": 4.711596559882487
+      "n_selected": 8784,
+      "selection_rate": 0.022415025007655406,
+      "precision": 0.76183970856102,
+      "lift": 4.589613137648427
     },
     {
       "threshold": 0.61,
-      "n_selected": 7570,
-      "selection_rate": 0.019317137899356945,
-      "precision": 0.7846763540290621,
-      "lift": 4.7271898048687735
+      "n_selected": 8784,
+      "selection_rate": 0.022415025007655406,
+      "precision": 0.76183970856102,
+      "lift": 4.589613137648427
     },
     {
       "threshold": 0.62,
-      "n_selected": 7333,
-      "selection_rate": 0.01871236092681433,
-      "precision": 0.790126823946543,
-      "lift": 4.76002551566006
+      "n_selected": 7856,
+      "selection_rate": 0.02004695314892314,
+      "precision": 0.7786405295315683,
+      "lift": 4.690827694704469
     },
     {
       "threshold": 0.63,
-      "n_selected": 7333,
-      "selection_rate": 0.01871236092681433,
-      "precision": 0.790126823946543,
-      "lift": 4.76002551566006
+      "n_selected": 7731,
+      "selection_rate": 0.01972797795243442,
+      "precision": 0.7811408614668219,
+      "lift": 4.705890648459134
     },
     {
       "threshold": 0.64,
-      "n_selected": 7333,
-      "selection_rate": 0.01871236092681433,
-      "precision": 0.790126823946543,
-      "lift": 4.76002551566006
+      "n_selected": 7731,
+      "selection_rate": 0.01972797795243442,
+      "precision": 0.7811408614668219,
+      "lift": 4.705890648459134
     },
     {
       "threshold": 0.65,
-      "n_selected": 7333,
-      "selection_rate": 0.01871236092681433,
-      "precision": 0.790126823946543,
-      "lift": 4.76002551566006
+      "n_selected": 6853,
+      "selection_rate": 0.017487496172297643,
+      "precision": 0.7981905734714724,
+      "lift": 4.808604620086406
     },
     {
       "threshold": 0.66,
-      "n_selected": 6712,
-      "selection_rate": 0.017127692150658364,
-      "precision": 0.8027413587604291,
-      "lift": 4.836020287337806
+      "n_selected": 6853,
+      "selection_rate": 0.017487496172297643,
+      "precision": 0.7981905734714724,
+      "lift": 4.808604620086406
     },
     {
       "threshold": 0.67,
-      "n_selected": 6712,
-      "selection_rate": 0.017127692150658364,
-      "precision": 0.8027413587604291,
-      "lift": 4.836020287337806
+      "n_selected": 6853,
+      "selection_rate": 0.017487496172297643,
+      "precision": 0.7981905734714724,
+      "lift": 4.808604620086406
     },
     {
       "threshold": 0.68,
-      "n_selected": 6712,
-      "selection_rate": 0.017127692150658364,
-      "precision": 0.8027413587604291,
-      "lift": 4.836020287337806
+      "n_selected": 6525,
+      "selection_rate": 0.01665050525671124,
+      "precision": 0.8042911877394636,
+      "lift": 4.84535704855326
     },
     {
       "threshold": 0.6900000000000001,
-      "n_selected": 6360,
-      "selection_rate": 0.016229457997346125,
-      "precision": 0.8092767295597484,
-      "lift": 4.875391855061173
+      "n_selected": 6525,
+      "selection_rate": 0.01665050525671124,
+      "precision": 0.8042911877394636,
+      "lift": 4.84535704855326
     },
     {
       "threshold": 0.7000000000000001,
-      "n_selected": 5455,
-      "selection_rate": 0.013920077574767787,
-      "precision": 0.8287809349220898,
-      "lift": 4.992892631358954
+      "n_selected": 5764,
+      "selection_rate": 0.014708584260487904,
+      "precision": 0.8183553088133241,
+      "lift": 4.930084681052214
     },
     {
       "threshold": 0.71,
-      "n_selected": 5455,
-      "selection_rate": 0.013920077574767787,
-      "precision": 0.8287809349220898,
-      "lift": 4.992892631358954
+      "n_selected": 4770,
+      "selection_rate": 0.012172093498009596,
+      "precision": 0.8412997903563941,
+      "lift": 5.0683109939409325
     },
     {
       "threshold": 0.72,
-      "n_selected": 5455,
-      "selection_rate": 0.013920077574767787,
-      "precision": 0.8287809349220898,
-      "lift": 4.992892631358954
+      "n_selected": 4770,
+      "selection_rate": 0.012172093498009596,
+      "precision": 0.8412997903563941,
+      "lift": 5.0683109939409325
     },
     {
       "threshold": 0.73,
-      "n_selected": 5455,
-      "selection_rate": 0.013920077574767787,
-      "precision": 0.8287809349220898,
-      "lift": 4.992892631358954
+      "n_selected": 4770,
+      "selection_rate": 0.012172093498009596,
+      "precision": 0.8412997903563941,
+      "lift": 5.0683109939409325
     },
     {
       "threshold": 0.74,
-      "n_selected": 5455,
-      "selection_rate": 0.013920077574767787,
-      "precision": 0.8287809349220898,
-      "lift": 4.992892631358954
+      "n_selected": 3810,
+      "selection_rate": 0.009722363988976216,
+      "precision": 0.868503937007874,
+      "lift": 5.232199155016152
     },
     {
       "threshold": 0.75,
-      "n_selected": 4487,
-      "selection_rate": 0.01144993365315913,
-      "precision": 0.8471138845553822,
-      "lift": 5.103337316170321
+      "n_selected": 3438,
+      "selection_rate": 0.008773093804225784,
+      "precision": 0.8819080860965678,
+      "lift": 5.312950864417947
     },
     {
       "threshold": 0.76,
-      "n_selected": 3844,
-      "selection_rate": 0.00980912524242115,
-      "precision": 0.8623829344432883,
-      "lift": 5.195323899670031
+      "n_selected": 3434,
+      "selection_rate": 0.008762886597938144,
+      "precision": 0.8820617355853232,
+      "lift": 5.313876507573928
     },
     {
       "threshold": 0.77,
-      "n_selected": 3793,
-      "selection_rate": 0.009678983362253752,
-      "precision": 0.8636962826258898,
-      "lift": 5.203236010321969
+      "n_selected": 3434,
+      "selection_rate": 0.008762886597938144,
+      "precision": 0.8820617355853232,
+      "lift": 5.313876507573928
     },
     {
       "threshold": 0.78,
-      "n_selected": 3005,
-      "selection_rate": 0.007668163723588853,
-      "precision": 0.8875207986688852,
-      "lift": 5.346763986877012
+      "n_selected": 3434,
+      "selection_rate": 0.008762886597938144,
+      "precision": 0.8820617355853232,
+      "lift": 5.313876507573928
     },
     {
       "threshold": 0.79,
-      "n_selected": 3005,
-      "selection_rate": 0.007668163723588853,
-      "precision": 0.8875207986688852,
-      "lift": 5.346763986877012
+      "n_selected": 3130,
+      "selection_rate": 0.007987138920077574,
+      "precision": 0.8910543130990415,
+      "lift": 5.368051226264084
     },
     {
       "threshold": 0.8,
-      "n_selected": 2688,
-      "selection_rate": 0.006859242625293457,
-      "precision": 0.8984375,
-      "lift": 5.412530361727313
+      "n_selected": 3130,
+      "selection_rate": 0.007987138920077574,
+      "precision": 0.8910543130990415,
+      "lift": 5.368051226264084
     },
     {
       "threshold": 0.81,
-      "n_selected": 2688,
-      "selection_rate": 0.006859242625293457,
-      "precision": 0.8984375,
-      "lift": 5.412530361727313
+      "n_selected": 3065,
+      "selection_rate": 0.00782127181790344,
+      "precision": 0.8929853181076672,
+      "lift": 5.3796843373461956
     },
     {
       "threshold": 0.8200000000000001,
-      "n_selected": 2482,
-      "selection_rate": 0.006333571501480045,
-      "precision": 0.9053182917002417,
-      "lift": 5.4539828767773635
+      "n_selected": 3065,
+      "selection_rate": 0.00782127181790344,
+      "precision": 0.8929853181076672,
+      "lift": 5.3796843373461956
     },
     {
       "threshold": 0.8300000000000001,
-      "n_selected": 2366,
-      "selection_rate": 0.0060375625191385115,
-      "precision": 0.9091293322062552,
-      "lift": 5.4769420391549035
+      "n_selected": 2432,
+      "selection_rate": 0.0062059814228845565,
+      "precision": 0.9115953947368421,
+      "lift": 5.491798540937966
     },
     {
       "threshold": 0.84,
-      "n_selected": 2329,
-      "selection_rate": 0.00594314586097785,
-      "precision": 0.9102619149849721,
-      "lift": 5.483765150030145
+      "n_selected": 2314,
+      "selection_rate": 0.0059048688373992035,
+      "precision": 0.9152981849611063,
+      "lift": 5.5141055623077735
     },
     {
       "threshold": 0.85,
-      "n_selected": 1788,
-      "selection_rate": 0.0045626212105746656,
-      "precision": 0.930648769574944,
-      "lift": 5.606583342111779
+      "n_selected": 2314,
+      "selection_rate": 0.0059048688373992035,
+      "precision": 0.9152981849611063,
+      "lift": 5.5141055623077735
     },
     {
       "threshold": 0.86,
-      "n_selected": 1788,
-      "selection_rate": 0.0045626212105746656,
-      "precision": 0.930648769574944,
-      "lift": 5.606583342111779
+      "n_selected": 2314,
+      "selection_rate": 0.0059048688373992035,
+      "precision": 0.9152981849611063,
+      "lift": 5.5141055623077735
     },
     {
       "threshold": 0.87,
-      "n_selected": 1788,
-      "selection_rate": 0.0045626212105746656,
-      "precision": 0.930648769574944,
-      "lift": 5.606583342111779
+      "n_selected": 1248,
+      "selection_rate": 0.003184648361743391,
+      "precision": 0.9607371794871795,
+      "lift": 5.787847405762363
     },
     {
       "threshold": 0.88,
-      "n_selected": 1641,
-      "selection_rate": 0.00418750637950393,
-      "precision": 0.935405240706886,
-      "lift": 5.635238139375156
+      "n_selected": 1248,
+      "selection_rate": 0.003184648361743391,
+      "precision": 0.9607371794871795,
+      "lift": 5.787847405762363
     },
     {
       "threshold": 0.89,
-      "n_selected": 1641,
-      "selection_rate": 0.00418750637950393,
-      "precision": 0.935405240706886,
-      "lift": 5.635238139375156
+      "n_selected": 1181,
+      "selection_rate": 0.0030136776564254363,
+      "precision": 0.9652836579170194,
+      "lift": 5.81523712685086
     },
     {
       "threshold": 0.9,
-      "n_selected": 1641,
-      "selection_rate": 0.00418750637950393,
-      "precision": 0.935405240706886,
-      "lift": 5.635238139375156
+      "n_selected": 1181,
+      "selection_rate": 0.0030136776564254363,
+      "precision": 0.9652836579170194,
+      "lift": 5.81523712685086
     },
     {
       "threshold": 0.91,
-      "n_selected": 669,
-      "selection_rate": 0.001707155251607635,
-      "precision": 0.9775784753363229,
-      "lift": 5.889305798933085
+      "n_selected": 1181,
+      "selection_rate": 0.0030136776564254363,
+      "precision": 0.9652836579170194,
+      "lift": 5.81523712685086
     },
     {
       "threshold": 0.92,
-      "n_selected": 669,
-      "selection_rate": 0.001707155251607635,
-      "precision": 0.9775784753363229,
-      "lift": 5.889305798933085
+      "n_selected": 1064,
+      "selection_rate": 0.0027151168725119933,
+      "precision": 0.9708646616541353,
+      "lift": 5.848859223185945
     },
     {
       "threshold": 0.93,
-      "n_selected": 613,
-      "selection_rate": 0.001564254363580688,
-      "precision": 0.9820554649265906,
-      "lift": 5.916276892733667
+      "n_selected": 1064,
+      "selection_rate": 0.0027151168725119933,
+      "precision": 0.9708646616541353,
+      "lift": 5.848859223185945
     },
     {
       "threshold": 0.9400000000000001,
-      "n_selected": 522,
-      "selection_rate": 0.001332040420536899,
-      "precision": 0.9904214559386973,
-      "lift": 5.966676815220168
+      "n_selected": 722,
+      "selection_rate": 0.0018424007349188527,
+      "precision": 0.9861495844875346,
+      "lift": 5.94094143136674
     },
     {
       "threshold": 0.9500000000000001,
-      "n_selected": 484,
-      "selection_rate": 0.001235071960804328,
-      "precision": 0.993801652892562,
-      "lift": 5.9870404116210425
+      "n_selected": 722,
+      "selection_rate": 0.0018424007349188527,
+      "precision": 0.9861495844875346,
+      "lift": 5.94094143136674
     },
     {
       "threshold": 0.96,
-      "n_selected": 484,
-      "selection_rate": 0.001235071960804328,
-      "precision": 0.993801652892562,
-      "lift": 5.9870404116210425
+      "n_selected": 722,
+      "selection_rate": 0.0018424007349188527,
+      "precision": 0.9861495844875346,
+      "lift": 5.94094143136674
     },
     {
       "threshold": 0.97,
-      "n_selected": 484,
-      "selection_rate": 0.001235071960804328,
-      "precision": 0.993801652892562,
-      "lift": 5.9870404116210425
+      "n_selected": 722,
+      "selection_rate": 0.0018424007349188527,
+      "precision": 0.9861495844875346,
+      "lift": 5.94094143136674
     },
     {
       "threshold": 0.98,
-      "n_selected": 484,
-      "selection_rate": 0.001235071960804328,
-      "precision": 0.993801652892562,
-      "lift": 5.9870404116210425
+      "n_selected": 434,
+      "selection_rate": 0.0011074818822088394,
+      "precision": 0.9930875576036866,
+      "lift": 5.9827384290878065
     },
     {
       "threshold": 0.99,
-      "n_selected": 230,
-      "selection_rate": 0.0005869143615392467,
+      "n_selected": 200,
+      "selection_rate": 0.0005103603143819537,
       "precision": 1.0,
       "lift": 6.024381620009532
     },
     {
       "threshold": 1.0,
-      "n_selected": 230,
-      "selection_rate": 0.0005869143615392467,
+      "n_selected": 200,
+      "selection_rate": 0.0005103603143819537,
       "precision": 1.0,
       "lift": 6.024381620009532
     }

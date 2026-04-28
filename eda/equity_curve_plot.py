@@ -58,31 +58,26 @@ def main():
     fig, ax = plt.subplots(figsize=(12, 6))
 
     curves = [
-        (BT / "trades_random_trailing_30.parquet",        "Random universe + trailing_30",       "#95a5a6", 1.4, "-",  "wins"),
-        (BT / "trades_cex_heuristic_trailing_30.parquet", "CEX heuristic + trailing_30",         "#f39c12", 1.4, "-",  "wins"),
-        (BT / "trades_model_top_sell_pressure_5.parquet", "Model top-decile + sell_pressure_5",  "#2980b9", 1.6, "-",  "wins"),
-        (BT / "trades_model_top_trailing_30.parquet",     "Model top-decile + trailing_30",      "#27ae60", 1.8, "-",  "wins"),
+        (BT / "trades_random_trailing_30.parquet",        "Random universe + trailing_30",         "#95a5a6", 1.4, "-"),
+        (BT / "trades_cex_heuristic_trailing_30.parquet", "CEX heuristic + trailing_30",           "#f39c12", 1.4, "-"),
+        (BT / "trades_model_top_sell_pressure_5.parquet", "Meta top-decile + sell_pressure_5",     "#2980b9", 1.6, "-"),
+        (BT / "trades_model_top_trailing_30.parquet",     "Meta top-decile + trailing_30 (-30% from peak)",  "#27ae60", 1.8, "-"),
     ]
 
     finals = []
-    for path, label, color, lw, ls, _ in curves:
+    for path, label, color, lw, ls in curves:
         df = load_with_time(path, feat_time)
         t, eq = equity_winsorized(df)
         ax.plot(to_dt(t), eq, color=color, linewidth=lw, linestyle=ls,
                 label=f"{label}  (final +{eq[-1]:.0f} SOL)")
         finals.append((label, eq[-1]))
 
-    two = load_with_time(ROOT / "eda" / "two_stage" / "trades.parquet", feat_time)
-    t2, eq2 = equity_real_sol(two)
-    ax.plot(to_dt(t2), eq2, color="#2c3e50", linewidth=2.2, linestyle="--",
-            label=f"Two-stage probe→scale + trailing  (final +{eq2[-1]:.0f} SOL, 100 bps slip)")
-
     ax.axhline(0, color="black", linewidth=0.6)
     ax.set_xlabel("Entry time (UTC, walk-forward OOF period)")
     ax.set_ylabel("Cumulative PnL (SOL)")
     ax.set_title(
         "Out-of-sample equity curves — 1 SOL/trade, ROI winsorized at +500% per trade\n"
-        "Two-stage uses real 0.1/1.0 SOL sizing with 100 bps round-trip slippage"
+        "Universe = top-decile of meta__lgbm OOF prediction (AUC 0.80, 1-hour embargo)"
     )
     ax.legend(loc="upper left", fontsize=10, framealpha=0.95)
     ax.grid(True, alpha=0.3)
@@ -97,7 +92,6 @@ def main():
     print(f"[plot] {out}")
     for label, val in finals:
         print(f"  {label}: {val:+.1f} SOL")
-    print(f"  Two-stage: {eq2[-1]:+.1f} SOL")
 
 
 if __name__ == "__main__":

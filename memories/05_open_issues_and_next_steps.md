@@ -11,8 +11,11 @@ All backtests use **first-slot mid-price** as entry. A real bot:
 **Fix**: re-label with 5-second-post-deploy price. Expect hit_2x base rate to drop ~2-3 pp.
 
 ### Cost Model
-Part-2 backtest is gross (no slippage). Two-stage sim uses 100 bps round-trip (realistic
-for small Pump.fun trades, but some slots have very thin liquidity → could be 200-500 bps).
+Part-2 single-stage backtest is gross (no slippage). Two-stage sim uses 100 bps round-trip
+or full bonding-curve fill (`eda/amm.py`, K = 30 · 1.073e9, 1% per side). For 1 SOL on
+genesis-priced tokens AMM impact alone is ~430 bps; round-trip slip is ~1800 bps before
+PnL. Future work: per-slot reserves snapshot from on-chain account state instead of
+deriving from spot price.
 
 ### Regime Sensitivity
 Hit_2x rate varies 12.4%–19.0% over 19 days (LetsBonk.fun took share from Pump.fun in

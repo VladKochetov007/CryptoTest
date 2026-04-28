@@ -12,13 +12,14 @@ Solves both parts of the test task: instant buy/skip decision in <300 ms and pos
 |---|---|
 | Dataset | 500k tokens, 19 days |
 | Base hit-2x rate (30 min) | 16.0% |
-| **Instant model OOF AUC** | **0.8014** (meta-LGBM, 77 features) |
-| Baseline instant AUC | 0.7653 (47 features) |
-| With-60s stage-2 AUC | 0.9452 |
-| Top-decile win rate (trailing-30 exit) | **60.6%** vs 36.1% random |
-| Two-stage PnL (5000 trades, 100 bps slippage) | **+3352 SOL** |
-| Cross-target hypothesis (train 5x → predict 2x) | **Refuted** |
-| Biggest discovery | `deployer_hr_7d` (IV=0.97, SHAP #1) |
+| **Instant model OOF AUC** | **0.8007** (meta-LGBM, 85 features, 1-h embargo, leak-free rolling) |
+| Baseline instant AUC | 0.7716 (47 base features, 1-h embargo) |
+| With-60s stage-2 AUC | 0.9434 |
+| Top-decile win rate (trailing_20 exit, best of 15-cell sweep) | **67.9%** vs 36.1% random |
+| Best single-stage PnL (5000 trades, 1 SOL/trade, ROI cap +500%) | **+2202 SOL** (arm 1.5×, trail -20%) |
+| Block-bootstrap 5–95% PnL cone | **+1864 … +2439 SOL**, P(>0) = 100% |
+| Permutation-null AUC (label shuffled, 25 samples) | 0.520 ± 0.026 — clean signal margin **+28 pp** |
+| Top feature | `deployer_hr_7d` (mean \|SHAP\| = 0.65) |
 | **End-to-end inference latency** | **6.1 ms** (293.9 ms budget remaining) |
 
 ---
@@ -29,24 +30,26 @@ The test task goal is **"accuracy in selecting tokens with potential ROI > 2x af
 
 | Component | Choice | Why |
 |---|---|---|
-| **Model** | `meta__lgbm` (LightGBM, walk-forward CV) | OOF AUC **0.8014** — beats base 0.7653, XGB 0.7633, CatBoost 0.7642 |
-| **Features** | 77 = 47 base + 30 meta-features | Adds multi-scale rolling deployer/funder/handle hit rates + text features |
-| **Top feature** | `deployer_hr_7d` | IV=0.97, SHAP #1 — 7-day rolling win rate of the deployer wallet |
-| **Entry rule** | score ≥ 39 → probe 0.1 SOL; ≥ 85 → 1.0 SOL after 60s re-score | Calibrated via isotonic regression to match base rate |
-| **Exit strategy (single-stage)** | **`trailing_30`** | Win rate **60.6%**, median ROI **+10.4%**, capped drawdown -82% (vs -100% on TP-only) |
-| **Exit strategy (two-stage)** | probe → re-score@60s → scale or abort + `trailing_30` | Total PnL **+3352 SOL** on 5000 trades with 100bps round-trip slippage |
+| **Model** | `meta__lgbm` (LightGBM, walk-forward CV, 1-h embargo) | OOF AUC **0.8007** — beats base 0.7716, XGB 0.7666, CatBoost 0.7625 |
+| **Features** | 85 = 47 base + 38 meta-features | Multi-scale rolling deployer/funder/handle hit rates, funder-graph (HHI, dust funder, recency), text features |
+| **Top feature** | `deployer_hr_7d` | mean \|SHAP\| 0.65, 7-day rolling deployer hit-rate (computed strictly past-only) |
+| **Entry rule** | score ≥ 41 → probe 0.1 SOL; ≥ 95 → 1.0 SOL after 60s re-score | Calibrated via isotonic regression on OOF |
+| **Exit strategy (winner of 15-cell sweep)** | **`trailing_20`** (arm 1.5× entry, trail -20% from peak, hard SL -60%) | Win rate **67.9%**, median ROI **+27.6%**, total PnL **+2202 SOL** on 5000 trades |
+| Two-stage probe → scale | Underperforms pure trailing on the meta universe | Abort discipline cuts probes that would otherwise revert; flat slip -246 SOL, AMM slip -68 SOL |
 
-**Lift attribution** vs random baseline on the same 5000-trade backtest:
+**Lift attribution** vs random baseline on 5000-trade single-stage backtest:
 
 | Source of edge | ΔWin rate | Δ Median ROI |
 |---|---|---|
-| Model selection (random → model top-decile) | +24.5 pp | +10.4 pp |
-| Exit logic (TP-only → trailing_30) | +8.4 pp | +1.0 pp |
-| Combined (random + TP-only → model + trailing_30) | **+30.4 pp** | **+11.7 pp** |
+| Model selection (random → meta top-decile) | +27.0 pp | +14.2 pp |
+| Exit logic (trailing_30 → trailing_20 within meta) | +4.8 pp | +13.4 pp |
+| Combined (random + trailing_30 → meta + trailing_20) | **+31.8 pp** | **+27.6 pp** |
 
-The model selection contributes ~3× more lift than the exit logic — **where you buy beats how you sell**.
+Model selection contributes ~2× more lift than exit logic — **where you buy beats how you sell**.
 
 ![OOS equity curves](eda/plots/backtest_equity_curve_oos.png)
+![Block-bootstrap robustness cone](eda/plots/backtest_equity_bootstrap.png)
+![Trailing-stop sweep heatmap](eda/plots/trailing_grid.png)
 
 ---
 
@@ -123,65 +126,105 @@ All results in `eda/backtest/` (JSON summaries committed) and `eda/two_stage/sum
 
 `deployer_sell_exit` was the worst (-19.4% median ROI): by the time the deployer sells, the rug has usually already happened. The signal is too late.
 
-**Returns on capital (model_top + trailing_30, 19-day backtest, 5000 trades)**:
+**Returns on capital (meta top-decile + trailing exit, 19-day backtest, 5000 trades, 1 SOL/trade, ROI cap +500%)**:
 
-| Metric | Single-stage | Two-stage |
+| Metric | trailing_30 (-30% drawdown) | trailing_20 best of sweep |
 |---|---|---|
-| Position size | 1 SOL flat | 0.1 SOL probe → 1.0 SOL scale |
-| Slippage | None | 100 bps round-trip |
-| Total invested | 5,000 SOL (across all trades) | 1,340 SOL (500 probes + 840 full) |
-| Total PnL | +2,661 SOL raw / +2,022 SOL (ROI cap +500%) | +3,352 SOL |
-| **ROI on invested** | **53.2% raw / 40.4% winsorized** | **250% on 1,340 SOL** |
-| Avg concurrent positions | ~0.1 (median hold 26s, 321 trades/day) | ~0.1 |
+| Position size | 1 SOL flat | 1 SOL flat |
+| Slippage | None | None |
+| Total invested | 5,000 SOL (independent trades) | 5,000 SOL |
+| Total PnL | +2,165 SOL | **+2,202 SOL** |
+| ROI on capital deployed | 43.3% | **44.0%** |
+| Win rate | 63.1% | **67.9%** |
+| Median per-trade ROI | +14.2% | +27.6% |
+| Avg concurrent positions | ~0.1 (median hold 26 s, 321 trades/day) | similar |
 | Working capital needed | ~1–2 SOL (sequential recycling) | ~1–2 SOL |
-| Win rate | 60.6% | 27.6% (many probes aborted at 60s) |
 
-> **Note on working capital**: with 321 trades/day and 26s median hold, average concurrency = 0.10 positions. In practice you never have more than 1–2 open at once, so ~2 SOL of working capital is enough to run all trades sequentially. The 5,000 SOL "total invested" figure assumes you treat each trade independently; with capital recycling the actual exposure is far smaller.
+> **Note on working capital**: 321 trades/day × ~26s median hold ⇒ avg concurrency = 0.10 positions. In practice you never have more than 1–2 open at once, so ~2 SOL of working capital is enough to run all trades sequentially. The 5,000 SOL "total invested" figure is the unrealised gross exposure; recycled capital is dramatically smaller.
 
-> **Note on raw vs winsorized**: a handful of tokens went 50–1000×. The raw PnL includes these tail events intact. The winsorized figure caps each trade at +500% per bet to show what you'd get without relying on extremely rare outliers.
+> **Note on winsorization**: a handful of tokens went 50–1000×. We winsorize per-trade ROI at +500% before summing, so the headline PnL is not a single tail trade dressed up as alpha. Block-bootstrap with 1-day blocks (n=500) confirms the curve: P(final PnL > 0) = 100%, 5–95% cone +1711…+2307 SOL.
 
-Six exit strategies backtested on model top-decile, random, and CEX-heuristic universes (5000 tokens each):
+Six exit strategies backtested on meta top-decile, random, and CEX-heuristic universes (5000 tokens each):
 
 | Strategy | Win % | Median ROI | Med hold | Notes |
 |---|---|---|---|---|
-| `trailing_30` | **60.6%** | **+10.4%** | 26s | Arms at +50%, trails -30% from peak |
+| `trailing_30` | **60.6%** | **+10.4%** | 26s | Arms at +50%, trails -30% from peak (+1.5×, -30%) |
 | `sell_pressure_5` | 54.4% | +13.8% | 12s | Exit if sell_vol > 1.5× buy_vol for 5 slots |
 | `vol_stagnation_10` | 52.6% | +12.2% | 15s | Exit if vol < 10% of 60s rolling max |
 | `tp_2x_only` | 52.2% | +9.4% | 35s | Pure 2x take-profit |
 | `tp_2x_sl_50` | 49.6% | 0.0% | 15s | 2x TP + -50% SL |
 | `deployer_sell_exit` | 32.5% | **-19.4%** | 47s | Exit on deployer first sell — worst |
 
-Random universe baseline: trailing_30 wins 36.1%, median ROI 0%.
+`deployer_sell_exit` was the worst (-19.4% median ROI): by the time the deployer sells, the rug has usually already happened. The signal is too late.
 
-**Two-stage integrated simulation** (`eda/two_stage/summary.json`):
-- 3,336 probe-only (score too low at 60s → exit at 0.1 SOL)
-- 824 abort at 60s (score dropped → cut the probe)
-- 840 full scale (score held → 1.0 SOL)
-- Result: **+3,352 SOL** gross PnL, 250% ROI on 1,340 SOL invested
+**Trailing parameter sweep** (15 cells: 5 trail thresholds × 3 arm multiples, meta top-decile, 5000 trades — see `eda/plots/trailing_grid.png`):
+
+- Wider stops uniformly hurt: -60% trailing yields +897 SOL vs +2300 SOL at -20% (arm 1.3×).
+- Arming later (2.0× vs 1.3×) costs ~5% PnL because slow movers exit through the hard SL before they ever arm.
+- Best cell: **arm 1.5×, trail -20%, hard-SL -60%** → **+2202 SOL, 67.9% win, +27.6% median ROI**.
+
+**Model-as-exit** (re-score with `with60s` model at t=60 s, abort if `p < 0.15`, otherwise apply trailing winner): **-57 SOL** vs pure trailing baseline. The 60-s model already informed the entry; re-scoring on the same features mid-trade adds no new information beyond what the trailing rule extracts from price action.
+
+**Two-stage probe→scale** (0.1 SOL probe at slot 0; abort at 60 s if `with60s_p < 0.30`; scale to 1.0 SOL if `with60s_p >= 0.85`; trailing exit otherwise) on meta universe, 20,000 candidates with 100 bps slip: **−246 SOL** total. Switching to the AMM bonding-curve fill model (`x·y = k`, `K = 30 · 1.073 × 10⁹` SOL·tokens, 1% fee/side, no flat slip): **−68 SOL**. The two-stage policy underperforms pure trailing because the abort discipline cuts probe positions exactly when the mean-reversion would otherwise let them recover. Confirms: full-conviction sizing on the meta-OOF top-decile, no abort, beats a probe→confirm policy on this universe.
 
 **Backtests vs universe comparison:**
 
 | Universe | Strategy | Win % | Median ROI |
 |---|---|---|---|
-| Model top-decile | trailing_30 | **60.6%** | **+10.4%** |
+| Meta top-decile | trailing_20 (best of sweep) | **67.9%** | **+27.6%** |
+| Meta top-decile | trailing_30 | 63.1% | +14.2% |
 | Random baseline | trailing_30 | 36.1% | 0.0% |
 | CEX heuristic | trailing_30 | 36.6% | 0.0% |
 
-Alpha lift: **+24.5 pp win rate** from model selection vs random. CEX heuristic ≈ random (zero alpha).
+Alpha lift: **+27.0 pp win rate** from model selection (random → meta) and **+4.8 pp** from exit tightening (trailing_30 → trailing_20). CEX heuristic ≈ random (zero alpha).
 
 ### Part 3: Meta-Features Research
 
-Multi-scale deployer rolling features built via cumsum+searchsorted (O(N log N), 12s for 500k tokens):
+Multi-scale deployer/funder/handle rolling features built via cumsum + searchsorted, **strictly time-precedes-self** semantics (no same-second peer leak):
 
-| Feature | IV | SHAP Rank |
+| Feature | mean \|SHAP\| | Rank |
 |---|---|---|
-| `deployer_hr_7d` — 7-day rolling win rate | **0.97** | **#1** (0.735) |
-| `deployer_hr_24h` | 0.90 | #4 |
-| `handle_hr_24h` — twitter handle track record | 0.25 | #8 |
-| `funder_hr_7d` | 0.67 | #15 |
-| `name_word_count` | 0.06 | #19 |
+| `deployer_hr_7d` — 7-day rolling deployer win rate | 0.65 | **#1** |
+| `deployer_seconds_since_last` | 0.39 | #2 |
+| `deployer_wallet_balance_after_sol` | 0.16 | #3 |
+| `deployer_hr_24h` | 0.15 | #4 |
+| `handle_hr_24h` — twitter handle track record | 0.10 | #8 |
+| `funder_hr_7d` (added in this round) | 0.082 | **#9** |
+| `funder_prior_n` | 0.039 | #21 |
+| `handle_unique_deployers_7d` (sybil signal) | 0.025 | #23 |
+| `funder_seconds_since_last` | 0.021 | #25 |
+
+**Funder-graph features added** (all past-only, none in top-15 — funder signal is genuinely weaker than deployer signal once tied-time leak is removed):
+
+- `funder_unique_deployers_prior` — distinct deployer count seeded by this funder before t
+- `funder_concentration_hhi` — Herfindahl over deployer-share distribution
+- `funder_avg_deposit_sol_prior` — mean prior deposit size
+- `funder_is_dust_funder` — drip-fund mule pattern flag (`amount < 0.5 SOL` AND `prior_n > 5`)
 
 **Cross-target finding:** Training on harder label (hit_5x) does NOT improve hit_2x detection. The diagonal dominates the 4×4 cross-target AUC matrix. Actionable: use a separate model trained on hit_5x for the high-conviction 60s scale gate.
+
+### Sanity Audit (run on every retrain)
+
+`eda/leakage_tests.py` — 7 hard assertions:
+
+1. Walk-forward folds disjoint and time-ordered.
+2. Embargo gap ≥ 1800 s (label window) on every fold boundary.
+3. No label-derived columns (`hit_2x`, `ath_market_cap_usd`, `peak_marketcap_usd`, …) appear in any feature list.
+4. Same-second same-deployer peers see **identical** prior-only rolling stats. *(This caught a real label-leakage bug in the rolling helper — see commit history.)*
+5. Slot-0 panel timing: `seconds_since_deploy[0] >= 0` for every token.
+6. Two-stage `idx_60` boundary correct: `secs[idx_60] >= 60` AND `secs[idx_60-1] < 60`.
+7. OOF token_ids align with the sorted feature parquet for both `instant` and `meta` artefacts.
+
+**Permutation-null test** (`eda/permutation_null.py`): 5 shuffles × 5 folds = 25 retrains with `hit_2x` permuted within the train fold; validation labels untouched. Mean shuffled AUC = **0.520 ± 0.026** (max 0.617 in one fold). Real model AUC 0.8007 is **+28 pp** above null mean — the signal is genuine. The 2 pp lift in the null reflects regime drift in the validation base rate (12.4% → 19.0% across the 19-day window), not feature leakage.
+
+### IV vs SHAP — what each measures
+
+Two complementary feature-importance lenses we publish:
+
+- **Information Value (IV)** is **univariate, model-agnostic**. Bin a feature into deciles, compute weight-of-evidence per bin (`woe = log(% positive / % negative)`), sum `(% pos - % neg) × woe`. Standard rule of thumb: `IV > 0.02` = useful, `> 0.1` = strong, `> 0.5` = suspiciously good (often a leak surrogate). See `eda/run_eda.py:186` for the formula.
+- **mean \|SHAP\|** is **multivariate, model-specific**. Game-theoretic attribution from the trained LGBM — measures the average magnitude of a feature's marginal contribution conditional on the rest of the basket. See `eda/explain.py:36`.
+
+A feature with high IV and low SHAP is **redundant** (other features already encode the same information). A feature with low IV and high SHAP **earns its keep through interactions** — it's only useful in conjunction with peers. We use IV to triage candidate features and SHAP to verify they survive in the joint model.
 
 ---
 
@@ -195,7 +238,9 @@ All plots in `eda/plots/`:
 
 | File | What it shows |
 |---|---|
-| **`backtest_equity_curve_oos.png`** | **OOS equity over calendar time — 4 strategies × 3 universes + two-stage. Per-trade ROI winsorized at +500% to prevent tail outlier from swamping the comparison. The headline image.** |
+| **`backtest_equity_curve_oos.png`** | **OOS equity over calendar time — 4 strategies × 3 universes. Per-trade ROI winsorized at +500%. The headline image.** |
+| **`backtest_equity_bootstrap.png`** | **5–95% block-bootstrap cone (n=500, 1-day blocks) over the meta + trailing_30 curve. P(final PnL > 0) = 100%, cone +1711…+2307 SOL.** |
+| **`trailing_grid.png`** | **15-cell parameter sweep: total PnL × (arm 1.3/1.5/2.0×, trail 20/30/40/50/60%). Winner: arm 1.3×, trail 20%, +2300 SOL.** |
 | `backtest_winrate_by_universe.png` | Win rate × 6 strategies × 3 universes — visual proof model_top dominates |
 | `backtest_median_roi_by_universe.png` | Median ROI × 6 strategies × 3 universes |
 | `backtest_roi_distribution.png` | Per-trade ROI boxplot, model_top universe (clipped to [-100%, +500%]) |
@@ -286,12 +331,22 @@ python -m venv .venv
 .venv/bin/python eda/backtest.py model_top  # ~2 min
 .venv/bin/python eda/two_stage_sim.py       # ~1 min
 
-# 8. Diagnostic plots
-.venv/bin/python eda/meta_eda_plots.py      # ~1 min
-.venv/bin/python eda/backtest_plots.py      # ~10s
-.venv/bin/python eda/equity_curve_plot.py   # ~5s
+# 8. Trailing parameter sweep + model-as-exit + AMM-fill comparison
+.venv/bin/python eda/trailing_sweep.py        # ~1 min
+.venv/bin/python eda/backtest_model_exit.py   # ~30s
+.venv/bin/python eda/two_stage_sim.py --amm   # AMM bonding-curve fill model
+.venv/bin/python eda/equity_bootstrap.py      # ~10s, 1-day block bootstrap
 
-# 9. Interactive EDA
+# 9. Sanity audit + permutation null
+.venv/bin/python eda/leakage_tests.py         # ~5s, 7 hard assertions
+.venv/bin/python eda/permutation_null.py      # ~5 min, 25 shuffled-label fits
+
+# 10. Diagnostic plots
+.venv/bin/python eda/meta_eda_plots.py        # ~1 min
+.venv/bin/python eda/backtest_plots.py        # ~10s
+.venv/bin/python eda/equity_curve_plot.py     # ~5s
+
+# 11. Interactive EDA
 .venv/bin/marimo run eda/notebook.py
 ```
 

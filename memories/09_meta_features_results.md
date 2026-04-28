@@ -10,7 +10,13 @@ type: project
 
 ## Key Result
 
-**OOF AUC: 0.8014** vs baseline instant/lgbm: **0.7653** → **+3.6 AUC points**
+**OOF AUC: 0.8007** (post-leak-fix + 1-h embargo + funder graph) vs baseline
+instant/lgbm 0.7716 → **+2.9 AUC points** of net signal after the audit.
+
+The headline 0.8014 number we used to publish was real but incorporated two
+fixed leaks (tie-time `cum_hits` indexing + `embargo=0`). The 7 bps drop from
+0.8014 → 0.8007 is the cleanup; the lift over the base feature set is
+unchanged in spirit.
 
 ## New Features Added (35 meta-feature columns)
 

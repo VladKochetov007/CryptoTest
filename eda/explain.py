@@ -39,6 +39,9 @@ def shap_feature_importance(feature_set: str, model_features: list[str], n_sampl
     import shap
     booster = lgb.Booster(model_file=str(ART / f"{feature_set}__lgbm" / "model_last.txt"))
     df = pl.read_parquet(FEAT).drop_nulls(["hit_2x"]).sort("deploy_time_unix")
+    if feature_set == "meta":
+        meta = pl.read_parquet(ART.parent / "meta_features.parquet")
+        df = df.join(meta, on="token_id", how="left")
     cols = [c for c in model_features if c in df.columns]
     sample = df.tail(n_sample).select(cols).with_columns(
         pl.col("deployer_wallet_source_cex_name").fill_null("__missing__").cast(pl.Categorical)
@@ -82,7 +85,7 @@ def threshold_sweep(y: np.ndarray, p: np.ndarray) -> dict:
 
 def main():
     summaries = {}
-    for fs in ("instant", "with60s"):
+    for fs in ("instant", "with60s", "meta"):
         per_algo = {}
         for algo in ("lgbm", "xgb", "catboost"):
             path = ART / f"{fs}__{algo}"
@@ -93,17 +96,23 @@ def main():
             auc = roc_auc_score(y, p)
             pr = average_precision_score(y, p)
             br = brier_score_loss(y, p)
-            per_algo[algo] = {"auc": auc, "pr_auc": pr, "brier": br,
-                               "fold_auc": [r["auc"] for r in s["fold_results"]]}
-        summaries[fs] = per_algo
+            fold_auc = [r["auc"] for r in s["fold_results"]] if "fold_results" in s else s.get("fold_aucs", [])
+            per_algo[algo] = {"auc": auc, "pr_auc": pr, "brier": br, "fold_auc": fold_auc}
+        if per_algo:
+            summaries[fs] = per_algo
 
     (OUT / "model_comparison.json").write_text(json.dumps(summaries, indent=2))
     print(json.dumps(summaries, indent=2))
 
-    # ---- pick best instant-model for output ----
-    best_fs = "instant"
-    best_algo = max(summaries[best_fs], key=lambda a: summaries[best_fs][a]["auc"])
-    print(f"\n[best] {best_fs} / {best_algo} AUC={summaries[best_fs][best_algo]['auc']:.4f}")
+    # pick the best (feature_set, algo) by OOF AUC across all available combos.
+    # `with60s` is excluded — its features are 60-second post-deploy aggregates,
+    # unavailable at the t<300ms decision deadline of test_task Part 1.
+    pre_buy_fs = [fs for fs in summaries if fs != "with60s"]
+    best_fs, best_algo = max(
+        ((fs, a) for fs in pre_buy_fs for a in summaries[fs]),
+        key=lambda fa: summaries[fa[0]][fa[1]]["auc"],
+    )
+    print(f"\n[best pre-buy] {best_fs} / {best_algo} AUC={summaries[best_fs][best_algo]['auc']:.4f}")
 
     tids, y, p = load_oof(best_fs, best_algo)
     iso = calibrate(y, p)

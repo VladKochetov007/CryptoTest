@@ -1,25 +1,26 @@
 {
-  "n_candidates": 5000,
-  "n_simulated": 5000,
+  "fill_mode": "flat",
+  "n_candidates": 20000,
+  "n_simulated": 20000,
   "actions": {
-    "probe_only": 3336,
-    "abort_60s": 824,
-    "full": 840
+    "full": 3673,
+    "probe_only": 13063,
+    "abort_60s": 3264
   },
   "exit_reasons": {
-    "sl_60": 817,
-    "timeout": 2248,
-    "abort_60s": 824,
-    "trail": 1111
+    "sl_60": 3393,
+    "trail": 4727,
+    "timeout": 8616,
+    "abort_60s": 3264
   },
-  "total_pnl_sol": 3351.83824115132,
-  "mean_pnl_sol": 0.670367648230264,
-  "median_pnl_sol": -0.011980191052990344,
-  "win_rate": 0.2756,
-  "p10_pnl_sol": -0.08628682829505481,
-  "p90_pnl_sol": 0.05431447371402427,
-  "worst_pnl_sol": -0.8357889634801923,
-  "best_pnl_sol": 3409.935762552443,
+  "total_pnl_sol": -245.79406622332482,
+  "mean_pnl_sol": -0.012289703311166241,
+  "median_pnl_sol": -0.013940491856844086,
+  "win_rate": 0.29625,
+  "p10_pnl_sol": -0.1269776068559239,
+  "p90_pnl_sol": 0.06462212346480721,
+  "worst_pnl_sol": -0.865546040418688,
+  "best_pnl_sol": 26.44128460892568,
   "params": {
     "probe_size_sol": 0.1,
     "full_size_sol": 1.0,
