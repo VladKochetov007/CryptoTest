@@ -41,7 +41,6 @@
 | **slot_features_60m** | Token behavior in the first 60 minutes post-deploy by slots | [slot_features_60m.parquet](slot_features_60m.parquet) |
 | **deployer_actions_60m** | On-chain deployer actions in the first 60 minutes post-deploy | [deployer_actions_60m.parquet](deployer_actions_60m.parquet) |
 
-* [cite_start]**Interface for viewing the dataset** (schemas, descriptions, SQL queries): [http://65.21.203.147:44778](http://65.21.203.147:44778)[cite: 28].
 * [cite_start]**Additional data source**: [https://dune.com/](https://dune.com/)[cite: 29].
 
 ---
