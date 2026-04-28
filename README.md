@@ -148,10 +148,10 @@ All plots in `eda/plots/`:
 
 | File | What it shows |
 |---|---|
+| **`backtest_equity_curve_oos.png`** | **OOS equity over calendar time — 4 strategies × 3 universes + two-stage. Per-trade ROI winsorized at +500% to prevent tail outlier from swamping the comparison. The headline image.** |
 | `backtest_winrate_by_universe.png` | Win rate × 6 strategies × 3 universes — visual proof model_top dominates |
 | `backtest_median_roi_by_universe.png` | Median ROI × 6 strategies × 3 universes |
 | `backtest_roi_distribution.png` | Per-trade ROI boxplot, model_top universe (clipped to [-100%, +500%]) |
-| `backtest_two_stage_pnl_curve.png` | Cumulative PnL curve + tail-distribution log-CDF (5000 trades) |
 | `backtest_hold_vs_roi.png` | Holding-time × ROI scatter for `trailing_30`, colored by exit reason |
 
 **Model + feature visuals (Part 1):**
@@ -242,6 +242,7 @@ python -m venv .venv
 # 8. Diagnostic plots
 .venv/bin/python eda/meta_eda_plots.py      # ~1 min
 .venv/bin/python eda/backtest_plots.py      # ~10s
+.venv/bin/python eda/equity_curve_plot.py   # ~5s
 
 # 9. Interactive EDA
 .venv/bin/marimo run eda/notebook.py
