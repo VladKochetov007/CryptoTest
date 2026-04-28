@@ -23,6 +23,31 @@ Solves both parts of the test task: instant buy/skip decision in <300 ms and pos
 
 ---
 
+## Best Combination for the Test Task
+
+The test task goal is **"accuracy in selecting tokens with potential ROI > 2x after 30 minutes"** (Part 1) plus an **exit strategy** (Part 2). The combination that wins on both axes:
+
+| Component | Choice | Why |
+|---|---|---|
+| **Model** | `meta__lgbm` (LightGBM, walk-forward CV) | OOF AUC **0.8014** — beats base 0.7653, XGB 0.7633, CatBoost 0.7642 |
+| **Features** | 77 = 47 base + 30 meta-features | Adds multi-scale rolling deployer/funder/handle hit rates + text features |
+| **Top feature** | `deployer_hr_7d` | IV=0.97, SHAP #1 — 7-day rolling win rate of the deployer wallet |
+| **Entry rule** | score ≥ 39 → probe 0.1 SOL; ≥ 85 → 1.0 SOL after 60s re-score | Calibrated via isotonic regression to match base rate |
+| **Exit strategy (single-stage)** | **`trailing_30`** | Win rate **60.6%**, median ROI **+10.4%**, capped drawdown -82% (vs -100% on TP-only) |
+| **Exit strategy (two-stage)** | probe → re-score@60s → scale or abort + `trailing_30` | Total PnL **+3352 SOL** on 5000 trades with 100bps round-trip slippage |
+
+**Lift attribution** vs random baseline on the same 5000-trade backtest:
+
+| Source of edge | ΔWin rate | Δ Median ROI |
+|---|---|---|
+| Model selection (random → model top-decile) | +24.5 pp | +10.4 pp |
+| Exit logic (TP-only → trailing_30) | +8.4 pp | +1.0 pp |
+| Combined (random + TP-only → model + trailing_30) | **+30.4 pp** | **+11.7 pp** |
+
+The model selection contributes ~3× more lift than the exit logic — **where you buy beats how you sell**.
+
+---
+
 ## What Was Built
 
 ### Part 1: Instant Decision (<300 ms)
@@ -119,6 +144,18 @@ Multi-scale deployer rolling features built via cumsum+searchsorted (O(N log N),
 
 All plots in `eda/plots/`:
 
+**Backtest visuals (Part 2 — exit strategies):**
+
+| File | What it shows |
+|---|---|
+| `backtest_winrate_by_universe.png` | Win rate × 6 strategies × 3 universes — visual proof model_top dominates |
+| `backtest_median_roi_by_universe.png` | Median ROI × 6 strategies × 3 universes |
+| `backtest_roi_distribution.png` | Per-trade ROI boxplot, model_top universe (clipped to [-100%, +500%]) |
+| `backtest_two_stage_pnl_curve.png` | Cumulative PnL curve + tail-distribution log-CDF (5000 trades) |
+| `backtest_hold_vs_roi.png` | Holding-time × ROI scatter for `trailing_30`, colored by exit reason |
+
+**Model + feature visuals (Part 1):**
+
 | File | What it shows |
 |---|---|
 | `meta_shap_importance.png` | Top-30 SHAP — red bars = new meta features |
@@ -204,6 +241,7 @@ python -m venv .venv
 
 # 8. Diagnostic plots
 .venv/bin/python eda/meta_eda_plots.py      # ~1 min
+.venv/bin/python eda/backtest_plots.py      # ~10s
 
 # 9. Interactive EDA
 .venv/bin/marimo run eda/notebook.py
