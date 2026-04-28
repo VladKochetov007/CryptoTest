@@ -19,6 +19,7 @@ Solves both parts of the test task: instant buy/skip decision in <300 ms and pos
 | Two-stage PnL (5000 trades, 100 bps slippage) | **+3352 SOL** |
 | Cross-target hypothesis (train 5x → predict 2x) | **Refuted** |
 | Biggest discovery | `deployer_hr_7d` (IV=0.97, SHAP #1) |
+| **End-to-end inference latency** | **6.1 ms** (293.9 ms budget remaining) |
 
 ---
 
@@ -26,17 +27,32 @@ Solves both parts of the test task: instant buy/skip decision in <300 ms and pos
 
 ### Part 1: Instant Decision (<300 ms)
 
-A calibrated 0–100 score assigned at slot 0 (before any post-launch data). At deploy time the system reads from pre-computed rolling tables (deployer hit rates, funder stats, handle history) and runs a single LGBM inference in <5 ms.
+A calibrated 0–100 score assigned at slot 0 (before any post-launch data). At deploy time the system reads from pre-computed rolling tables (deployer hit rates, funder stats, handle history) and runs a single LGBM inference in <10 ms.
+
+**Measured inference latency (50k-iteration benchmark):**
+
+| Step | Time |
+|---|---|
+| Deployer rolling stats lookup (dict) | 0.46 μs |
+| Text features (regex + string ops) | 11 μs |
+| Macro context lookup (dict) | 0.12 μs |
+| **LGBM single-row predict** | **6,071 μs** ← bottleneck |
+| Score + threshold | 0.15 μs |
+| **Total** | **6.1 ms** |
+| Budget remaining | **293.9 ms** (~98% headroom) |
+
+LGBM predict dominates. No recursive rolling optimization needed — rolling stats are maintained as per-deployer deques (event-based, not a continuous time series), so each new token costs O(K) where K = tokens per deployer in the window (avg 5.4).
 
 **Architecture:**
 ```
 gRPC CreateEvent
-  └─ lookup deployer_hr_7d / deployer_hr_24h from rolling table
-  └─ text features (handle digit ratio, desc template score, name word count)
-  └─ macro context (BTC price, SOL vol)
-  └─ LGBM inference → calibrated prob → score 0–100
+  └─ 0.5 μs: lookup deployer_hr_7d / deployer_hr_24h from in-memory deque table
+  └─ 11 μs:  text features (handle digit ratio, desc template score, name word count)
+  └─ 0.1 μs: macro context (BTC price, SOL vol from last 5-min bar)
+  └─ 6 ms:   LGBM inference (77 features, 278 trees) → raw probability
+  └─ 0.1 μs: isotonic calibration → score 0–100
   └─ score ≥ 39 → probe buy (0.1 SOL)
-  └─ score ≥ 85 → high-conviction (1.0 SOL)
+  └─ score ≥ 85 → high-conviction (1.0 SOL, after 60s re-score)
 ```
 
 **Why task heuristics fail** (all tested, all found weak or reversed):
@@ -48,9 +64,11 @@ gRPC CreateEvent
 | hasn't created tokens before → +10 | Non-monotone. Veterans with *wins* (`deployer_hr_7d`) are strongest signal. |
 | deposit > 1 SOL → +20 | Continuous, not step. Works as a continuous feature, not threshold. |
 
-### Part 2: Exit Strategies
+### Part 2: Exit Strategies — Backtested on Historical Data
 
-Six exit strategies backtested on model top-decile, random, and CEX-heuristic universes:
+All results in `eda/backtest/` (JSON summaries committed) and `eda/two_stage/summary.json`.
+
+Six exit strategies backtested on model top-decile, random, and CEX-heuristic universes (5000 tokens each, full slot-level simulation, no slippage in Part 2 tables):
 
 | Strategy | Win % | Median ROI | Med hold | Notes |
 |---|---|---|---|---|
@@ -62,6 +80,22 @@ Six exit strategies backtested on model top-decile, random, and CEX-heuristic un
 | `deployer_sell_exit` | 32.5% | **-19.4%** | 47s | Exit on deployer first sell — worst (most tokens already rugged) |
 
 Random universe baseline for comparison: trailing_30 wins 36.1%, median ROI 0%.
+
+**Two-stage integrated simulation** (`eda/two_stage/summary.json`):
+- Entry: 0.1 SOL probe → re-score at 60s → scale to 1.0 SOL or abort
+- 100 bps buy + 100 bps sell slippage
+- 5,000 candidate trades from 224k eligible tokens
+- Result: **+3,352 SOL** gross PnL, 27.6% win rate (tail-harvester profile)
+
+**Backtests vs universe comparison:**
+
+| Universe | Strategy | Win % | Median ROI |
+|---|---|---|---|
+| Model top-decile | trailing_30 | **60.6%** | **+10.4%** |
+| Random baseline | trailing_30 | 36.1% | 0.0% |
+| CEX heuristic | trailing_30 | 36.6% | 0.0% |
+
+Alpha lift: **+24.5 pp win rate** from model selection vs random. CEX heuristic ≈ random (zero alpha).
 
 ### Part 3: Meta-Features Research (Overnight)
 
