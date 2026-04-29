@@ -1,21 +1,21 @@
 {
   "best_model": "meta/lgbm",
-  "auc": 0.8006630890448568,
-  "pr_auc": 0.4615488457520825,
-  "brier": 0.19318173196915167,
+  "auc": 0.7977185826717518,
+  "pr_auc": 0.45716904095922645,
+  "brier": 0.19231099491181583,
   "base_rate": 0.1659921404511585,
   "buy_decision": {
-    "threshold": 0.41000000000000003,
-    "lift": 3.3320733846720363,
-    "precision": 0.5530979932620478,
-    "n_selected": 27308,
-    "selection_rate": 0.06968459732571196
+    "threshold": 0.42,
+    "lift": 3.6367194869616606,
+    "precision": 0.6036668518612051,
+    "n_selected": 19799,
+    "selection_rate": 0.0505231193222415
   },
   "high_conviction": {
-    "threshold": 0.98,
-    "lift": 5.9827384290878065,
-    "precision": 0.9930875576036866,
-    "n_selected": 434,
-    "selection_rate": 0.0011074818822088394
+    "threshold": 0.99,
+    "lift": 6.024381620009532,
+    "precision": 1.0,
+    "n_selected": 418,
+    "selection_rate": 0.001066653057058283
   }
 }
