@@ -1,4 +1,5 @@
-"""Pump.fun pipeline: data -> features -> meta__lgbm -> backtest (trailing_30)."""
+"""Pump.fun pipeline: tokens.parquet + features.parquet -> meta features -> model -> backtest -> ranked CSV."""
+
 import marimo
 
 __generated_with = "0.23.3"
@@ -7,6 +8,8 @@ app = marimo.App(width="full")
 
 @app.cell
 def _():
+    import sys
+    import time
     import json
     from collections import Counter
     from dataclasses import dataclass
@@ -20,25 +23,154 @@ def _():
     from sklearn.metrics import roc_auc_score
 
     ROOT = Path("/home/vlad/development/PumpTest")
-    ART = ROOT / "eda" / "artifacts" / "meta__lgbm"
     SLOTS = ROOT / "slot_features_60m.parquet"
-    return ART, Counter, Path, ROOT, SLOTS, dataclass, json, lgb, mo, np, pl, plt, roc_auc_score
+    OUT_CSV = ROOT / "eda" / "scoring" / "scored_submission.csv"
+
+    # make eda/ importable so we can reuse build_meta_features and meta_train helpers
+    sys.path.insert(0, str(ROOT / "eda"))
+    from build_meta_features import (
+        compute_rolling_group_features,
+        funder_graph_features,
+        twitter_handle_reuse_features,
+        twitter_handle_features,
+        description_features,
+        name_text_features,
+        image_hash_rolling_count,
+        macro_derived_features,
+        meme_kw_rolling_win_rate,
+    )
+    from meta_train import prep, walkforward_splits
+
+    return (
+        Counter,
+        OUT_CSV,
+        ROOT,
+        SLOTS,
+        compute_rolling_group_features,
+        dataclass,
+        description_features,
+        funder_graph_features,
+        image_hash_rolling_count,
+        json,
+        lgb,
+        macro_derived_features,
+        meme_kw_rolling_win_rate,
+        mo,
+        name_text_features,
+        np,
+        pl,
+        plt,
+        prep,
+        sys,
+        time,
+        twitter_handle_features,
+        twitter_handle_reuse_features,
+        walkforward_splits,
+    )
+
+
+@app.cell
+def _(mo):
+    mo.md("""
+# Pump.fun pre-buy scoring pipeline
+
+End-to-end notebook: raw parquet files → meta feature engineering → LightGBM → backtest → ranked submission CSV.
+
+**Label**: `hit_2x` — token reached 2× its launch market-cap within the first hour.
+**Base rate**: ~15% across the dataset.
+**Model**: `meta__lgbm` — 84 features (41 base + 43 meta), 5-fold expanding walk-forward with 1h embargo.
+**OOF AUC**: 0.7977 (vs instant baseline 0.7653, +324 bps).
+""")
 
 
 @app.cell
 def _(ROOT, pl):
-    _feat = pl.read_parquet(ROOT / "eda" / "features.parquet").drop_nulls("hit_2x").sort("deploy_time_unix")
-    _meta = pl.read_parquet(ROOT / "eda" / "meta_features.parquet")
-    df = _feat.join(_meta, on="token_id", how="inner")
+    feat_raw = pl.read_parquet(ROOT / "eda" / "features.parquet")
+    tokens = pl.read_parquet(ROOT / "tokens.parquet").select(
+        "token_id", "name", "ticker", "description", "twitter_handle",
+        "deployer_wallet_source", "deployer_wallet_source_amount_sol",
+        "image_hash_sha256",
+    )
+
+    feat = feat_raw.select(
+        "token_id", "deployer_address", "deploy_time_unix", "hit_2x", "hit_5x",
+        "btc_close", "sol_vol_1h", "sol_vol_24h", "sol_ret_1h", "btc_ret_1h",
+    )
+    feat_full = feat.join(
+        tokens.select("token_id", "deployer_wallet_source", "twitter_handle"),
+        on="token_id", how="left",
+    )
+    return feat, feat_full, feat_raw, tokens
+
+
+@app.cell
+def _(
+    compute_rolling_group_features,
+    description_features,
+    feat,
+    feat_full,
+    feat_raw,
+    funder_graph_features,
+    image_hash_rolling_count,
+    macro_derived_features,
+    meme_kw_rolling_win_rate,
+    name_text_features,
+    pl,
+    time,
+    tokens,
+    twitter_handle_features,
+    twitter_handle_reuse_features,
+):
+    _t0 = time.time()
+
+    _ms_dep = compute_rolling_group_features(
+        feat_full, "deployer_address", "hit_2x",
+        {"1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800}, "deployer",
+    )
+    _ms_fund = compute_rolling_group_features(
+        feat_full, "deployer_wallet_source", "hit_2x",
+        {"24h": 86_400, "7d": 604_800}, "funder",
+    )
+    _ms_handle_roll = compute_rolling_group_features(
+        feat_full, "twitter_handle", "hit_2x",
+        {"24h": 86400}, "handle",
+    )
+    _handle_static = twitter_handle_features(tokens)
+    _desc_feat = description_features(tokens)
+    _name_feat = name_text_features(tokens)
+    _meme_roll = meme_kw_rolling_win_rate(feat, _name_feat)
+    _fund_graph = funder_graph_features(feat, tokens)
+    _handle_reuse = twitter_handle_reuse_features(feat, tokens)
+    _img_count = image_hash_rolling_count(feat, tokens)
+    _macro_feat = macro_derived_features(feat)
+
+    _base = feat.select("token_id")
+    for _df in [_ms_dep, _ms_fund, _ms_handle_roll, _handle_static, _desc_feat,
+                _name_feat, _meme_roll, _fund_graph, _handle_reuse, _img_count, _macro_feat]:
+        _base = _base.join(_df, on="token_id", how="left")
+
+    meta_features_df = _base
+    meta_elapsed = time.time() - _t0
+    return meta_elapsed, meta_features_df
+
+
+@app.cell
+def _(feat_raw, meta_elapsed, meta_features_df, mo, pl):
+    _feat_base = feat_raw.drop_nulls("hit_2x").sort("deploy_time_unix")
+    df = _feat_base.join(meta_features_df, on="token_id", how="left")
+    mo.md(f"**Data ready** — {df.height:,} labeled tokens, meta features in {meta_elapsed:.1f}s")
     return (df,)
 
 
 @app.cell
 def _():
     BASE_FEATURES = [
-        "deployer_deposit_amount", "deployer_wallet_balance_before",
-        "deployer_wallet_balance_after_sol", "deployer_wallet_source_amount_sol",
-        "is_cex", "deployer_wallet_source_cex_name",
+        "deployer_deposit_amount",
+        "deployer_wallet_balance_before",
+        "deployer_wallet_balance_after_sol",
+        "deployer_wallet_source_amount_sol",
+        "is_cex",
+        "deployer_wallet_source_cex_name",
         "has_image", "has_website", "has_telegram",
         "name_len", "ticker_len", "desc_len",
         "deployer_prior_n", "deployer_prior_grad", "deployer_prior_hit20k",
@@ -72,19 +204,226 @@ def _():
         "image_hash_prior_count",
         "btc_ret_24h", "sol_vol_ratio", "sol_btc_ret_spread",
     ]
-    CAT_COL = "deployer_wallet_source_cex_name"
-    return BASE_FEATURES, CAT_COL, META_FEATURES
+    return BASE_FEATURES, META_FEATURES
 
 
 @app.cell
-def _(ART, BASE_FEATURES, CAT_COL, META_FEATURES, df, json, lgb, np):
-    _all = BASE_FEATURES + META_FEATURES
-    model_cols = [c for c in _all if c in df.columns]
+def _(mo):
+    mo.md("""
+## Feature reference
 
-    booster = lgb.Booster(model_file=str(ART / "model_last.txt"))
-    oof = np.load(ART / "oof_pred.npy")
-    _summary = json.loads((ART / "summary.json").read_text())
-    fold_aucs = _summary["fold_aucs"]
+All 84 features used by `meta__lgbm`. SHAP rank = mean |SHAP| rank on last OOF fold (2k sample).
+
+### Deployer wallet — on-chain economics (BASE)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `deployer_wallet_balance_after_sol` | 3 | + | SOL balance remaining after funding the token launch. Wealthy deployers tend to be more committed. |
+| `deployer_deposit_amount` | 4 | + | SOL deposited to bonding curve at launch. Higher deposit = more skin in the game. |
+| `deployer_wallet_balance_before` | 13 | + | Pre-deposit wallet balance. Proxy for deployer net worth. |
+| `deployer_wallet_source_amount_sol` | 20 | + | SOL amount sent by the funding wallet to the deployer. Low amount = drip-funder mule pattern. |
+| `is_cex` | — | + | Binary: funder wallet is a known CEX hot wallet. Weak as boolean; `deployer_wallet_source_cex_name` carries the real signal. |
+| `deployer_wallet_source_cex_name` | — | varies | Categorical CEX name. MEXC: +0.50 lift vs base; Gate.io: +1.41 lift. Binance/OKX near neutral. |
+
+### Token metadata (BASE)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `has_image` | 11 | + | Token has an uploaded image. 0 = likely bot/spam. SHAP ~0.06. |
+| `has_website` | — | + | Token has a website URL. |
+| `has_telegram` | — | + | Token has a Telegram link. |
+| `name_len` | — | mixed | Character length of token name. Very short or very long names are noisy. |
+| `ticker_len` | — | — | Character length of ticker symbol. |
+| `desc_len` | — | + | Character length of description. 0 = no description (bot signal). Continuous replacement for `has_desc`. |
+| `name_alpha_chars` | — | + | Count of alphabetic characters in name. |
+| `name_upper_chars` | 6 | + | Count of uppercase characters in name. Strong signal — SHAP 0.117. Reflects naming style patterns of successful deployers. |
+| `mint_suffix_pump` | 12 | + | Token mint address ends in "pump". SHAP ~0.059. Pump.fun generated mints always end in "pump"; some deployers use vanity mints. |
+| `deployer_suffix_pump` | — | + | Deployer address ends in "pump". Vanity address signal. |
+
+### Deployer history (BASE — instant window at deploy time)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `deployer_prior_n` | 18 | + | Total prior token count for this deployer (all-time). |
+| `deployer_prior_grad` | — | + | Prior graduation count for this deployer. Graduation = market-cap ≥ $69k. |
+| `deployer_prior_hit20k` | 14 | + | Prior count where market-cap exceeded $20k. Leading indicator of quality. |
+| `deployer_seconds_since_last` | 2 | — | Seconds since this deployer's previous token. Short gaps = serial spammer; very long gaps = infrequent = often quality. #2 by SHAP (0.381). |
+
+### Funder history (BASE — instant window)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `funder_prior_n` | 16 | + | Prior token count funded by this wallet. |
+| `funder_prior_hit20k` | — | + | Prior count hitting $20k for this funder. |
+| `funder_prior_grad` | — | + | Prior graduation count for this funder. |
+
+### Market activity at deploy time (BASE)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `deploys_prev_15m` | — | — | Platform-wide deploy count in last 15 minutes. High = crowded market. |
+| `deploys_prev_60m` | — | — | Platform-wide deploy count in last 60 minutes. |
+| `hit20k_rate_prev_60m` | — | + | Platform-wide hit_20k rate over last 60 minutes. Regime indicator. |
+| `same_ticker_today_prev` | — | — | Prior tokens today with the same ticker. Clone signal. |
+| `same_name_prev_hour` | — | — | Prior tokens in the last hour with the same name. |
+
+### Clock features (BASE)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `utc_sin`, `utc_cos` | — | cyclic | Hour-of-day encoded as sin/cos for smooth cyclical representation. |
+| `utc_hour` | — | cyclic | UTC hour integer. |
+| `utc_dow` | — | cyclic | UTC day of week (0=Mon). |
+| `ny_hour` | — | cyclic | Hour in New York timezone (US market hours). |
+| `ldn_hour` | — | cyclic | Hour in London timezone (EU market hours). |
+| `tokyo_hour` | — | cyclic | Hour in Tokyo timezone (Asian market hours). |
+
+### Stationary macro — realized volatility and returns (BASE)
+
+All price-level features (btc_close, sol_close) are excluded — non-stationary I(1) processes that encode bull/bear regime, not a generalizing signal.
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `sol_vol_1h` | — | — | SOL realized vol: std of 5-minute log-returns over last 1h. High vol = choppy market. |
+| `sol_vol_24h` | — | — | SOL realized vol over last 24h. |
+| `sol_ret_1h` | — | + | SOL 1h percentage return. |
+| `sol_ret_24h` | — | + | SOL 24h percentage return. |
+| `btc_vol_1h` | — | — | BTC realized vol over 1h. |
+| `btc_ret_1h` | — | + | BTC 1h percentage return. |
+
+---
+
+### Multi-scale deployer history (META — rolling windows, O(N log N) per group)
+
+Computed via `compute_rolling_group_features`: cumsum + searchsorted, strictly past (side="left" on hi), tie-safe.
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `deployer_hr_7d` | **1** | + | Deployer hit_2x rate over last 7 days. Top feature by SHAP (0.693). Serial winners are persistent. |
+| `deployer_hr_24h` | 5 | + | Deployer hit_2x rate over last 24h. Short-term momentum. SHAP 0.131. |
+| `deployer_hr_1h` | 8 | + | Deployer hit_2x rate over last 1h. Very fresh signal. SHAP 0.064. |
+| `deployer_prior_n_7d` | 9 | + | Deployer token count in last 7 days. Active deployers. SHAP 0.061. |
+| `deployer_prior_n_24h` | — | + | Deployer token count in last 24h. |
+| `deployer_prior_n_6h` | — | + | Deployer token count in last 6h. |
+| `deployer_prior_n_1h` | — | + | Deployer token count in last 1h. |
+
+### Multi-scale funder history (META)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `funder_hr_7d` | 15 | + | Funder hit_2x rate over last 7 days. SHAP 0.054. Smart-money funder signal. |
+| `funder_hr_24h` | — | + | Funder hit_2x rate over last 24h. |
+| `funder_prior_n_7d` | — | + | Funder token count in last 7 days. |
+| `funder_prior_n_24h` | — | + | Funder token count in last 24h. |
+
+### Funder graph features (META — past-only snapshot per token)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `funder_seconds_since_last` | — | — | Seconds since funder's previous funding event. Rapid-fire funders are spammers. |
+| `funder_unique_deployers_prior` | — | mixed | Distinct deployer addresses this funder has funded (all past). |
+| `funder_concentration_hhi` | — | — | HHI = Σ(pᵢ²) over deployer-share distribution. HHI=1 means one deployer monopolizes this funder (sybil signal). |
+| `funder_avg_deposit_sol_prior` | — | + | Mean SOL amount deposited by this funder historically. |
+| `funder_is_dust_funder` | — | — | 1 if deposit < 0.5 SOL AND prior_n > 5. Drip-fund mule wallet pattern. |
+
+### Twitter handle — sybil and quality signals (META)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `handle_hr_24h` | 7 | + | Hit_2x rate for tokens sharing this twitter handle, last 24h. SHAP 0.101. |
+| `handle_prior_n_24h` | — | + | Token count for this handle, last 24h. |
+| `handle_unique_deployers_7d` | — | — | Distinct deployer addresses using this handle in last 7 days. >1 = handle shared across wallets (sybil signal). |
+| `handle_len` | — | + | Character length of twitter handle. 0 = no handle. Continuous replacement for has_twitter. |
+| `handle_digit_ratio` | — | — | Fraction of digits in handle. High ratio = generated/bot handle. |
+| `handle_has_underscore` | — | mixed | Handle contains underscore. |
+| `handle_ends_in_digits` | — | — | Handle ends in digits. Bot-name pattern. |
+| `handle_is_celeb` | — | mixed | Handle matches a known celebrity (Elon, Trump, Vitalik, etc.). Often impersonation. |
+| `handle_contains_ticker` | — | + | Handle starts or ends with the token's ticker symbol. Authentic branding signal. |
+
+### Description text features (META)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `desc_word_count` | — | + | Word count of token description. 0 = no description. |
+| `desc_has_url` | — | mixed | Description contains a URL. |
+| `desc_has_deployed_template` | — | — | Description contains "deployed using" — pump.fun auto-generated template. Quality-negative signal. |
+| `desc_exclamation_count` | — | — | Exclamation marks in description. Hype-language indicator. |
+| `desc_template_score` | — | — | Count of known hype phrases ("100x", "safe", "no rug", etc.) in description. Higher = more copy-paste spam. |
+| `desc_has_address` | — | mixed | Description contains a base58 address string. |
+
+### Name/ticker text features (META)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `name_word_count` | 19 | + | Word count in token name. Multi-word names often more intentional. SHAP 0.039. |
+| `name_digit_count` | — | — | Digit count in name. Random-generated names often contain digits. |
+| `name_has_meme_kw` | — | mixed | Name contains a meme keyword (doge, pepe, moon, etc.). Low IV — very common, not selective. |
+| `ticker_has_meme_kw` | — | mixed | Ticker contains a meme keyword. |
+| `ticker_digit_count` | — | — | Digit count in ticker. |
+| `ticker_special_count` | — | — | Special character count in ticker. |
+| `ticker_len_4_5` | — | + | Ticker length is 4 or 5 characters. Common among legitimate tokens. |
+
+### Meme keyword regime (META)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `meme_kw_hr_24h` | 17 | + | Rolling 24h hit_2x rate for the meme-keyword category (15-min bucket aggregation, shift by 1 bucket). Regime signal: when meme tokens are hot, the signal lifts. SHAP 0.049. |
+
+### Image reuse (META)
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `image_hash_prior_count` | 10 | — | Count of prior tokens using the same SHA256 image hash. 0 = no image or first use. Recycled images = serial copycats. SHAP 0.060. |
+
+### Stationary macro derived (META)
+
+Computed in `build_meta_features.macro_derived_features` from already-stationary inputs.
+
+| Feature | SHAP rank | Direction | Description |
+|---|---|---|---|
+| `btc_ret_24h` | — | + | BTC 24h percentage return (via join_asof on token timestamps — many tokens share 5-min bars). |
+| `sol_vol_ratio` | — | mixed | sol_vol_1h / sol_vol_24h. Short-term vs long-term vol ratio. >1 = vol spike (intraday). |
+| `sol_btc_ret_spread` | — | + | sol_ret_1h − btc_ret_1h. SOL excess return over BTC at 1h horizon. |
+""")
+
+
+@app.cell
+def _(BASE_FEATURES, META_FEATURES, df, lgb, np, prep, roc_auc_score, walkforward_splits):
+    _all_cols = BASE_FEATURES + META_FEATURES
+    model_cols = [c for c in _all_cols if c in df.columns]
+
+    _times = df["deploy_time_unix"].to_numpy()
+    _splits = walkforward_splits(_times, n_folds=5, embargo_sec=3600)
+    _n = df.height
+    oof = np.full(_n, np.nan)
+    fold_aucs = []
+    _booster = None
+
+    for _k, (_tr_idx, _va_idx) in enumerate(_splits):
+        _tr, _va = df[_tr_idx], df[_va_idx]
+        _X_tr, _y_tr, _cat_idx = prep(_tr, model_cols, "hit_2x")
+        _X_va, _y_va, _ = prep(_va, model_cols, "hit_2x")
+        _base_rate = float(_y_tr.mean())
+        _ds_tr = lgb.Dataset(_X_tr, label=_y_tr, categorical_feature=_cat_idx, free_raw_data=False)
+        _ds_va = lgb.Dataset(_X_va, label=_y_va, free_raw_data=False)
+        _params = dict(
+            objective="binary", metric="auc",
+            learning_rate=0.05, num_leaves=63,
+            feature_fraction=0.85, bagging_fraction=0.85, bagging_freq=5,
+            min_data_in_leaf=200,
+            scale_pos_weight=(1 - _base_rate) / max(_base_rate, 1e-6),
+            verbose=-1, n_jobs=-1,
+        )
+        _booster = lgb.train(
+            _params, _ds_tr, num_boost_round=600,
+            valid_sets=[_ds_va],
+            callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)],
+        )
+        _pred = _booster.predict(_X_va)
+        oof[_va_idx] = _pred
+        fold_aucs.append(float(roc_auc_score(_y_va, _pred)))
+
+    booster = _booster
     return booster, fold_aucs, model_cols, oof
 
 
@@ -93,7 +432,10 @@ def _(df, fold_aucs, mo, np, oof, pl, roc_auc_score):
     _mask = ~np.isnan(oof)
     oof_auc = roc_auc_score(df["hit_2x"].to_numpy()[_mask].astype(int), oof[_mask])
 
-    _fold_tbl = pl.DataFrame({"fold": list(range(len(fold_aucs))), "auc": fold_aucs})
+    _fold_tbl = pl.DataFrame({
+        "fold": list(range(len(fold_aucs))),
+        "auc": [round(a, 4) for a in fold_aucs],
+    })
     mo.hstack([
         mo.stat(label="OOF AUC", value=f"{oof_auc:.4f}"),
         mo.stat(label="n_tokens", value=f"{_mask.sum():,}"),
@@ -110,29 +452,60 @@ def _(booster, model_cols, np, plt):
     _names = [model_cols[i] for i in _idx]
     _vals = _gain[_idx] / _gain.sum()
 
-    fig_imp, ax = plt.subplots(figsize=(10, 10))
-    ax.barh(range(30), _vals[::-1])
-    ax.set_yticks(range(30))
-    ax.set_yticklabels(_names[::-1], fontsize=8.5)
-    ax.set_xlabel("gain share")
-    ax.set_title("Top 30 features — LightGBM gain")
+    fig_imp, _ax = plt.subplots(figsize=(10, 10))
+    _ax.barh(range(30), _vals[::-1])
+    _ax.set_yticks(range(30))
+    _ax.set_yticklabels(_names[::-1], fontsize=8.5)
+    _ax.set_xlabel("gain share")
+    _ax.set_title("Top 30 features — LightGBM gain")
     plt.tight_layout()
     fig_imp
+
+
+@app.cell
+def _(mo):
+    mo.md("""
+## Transaction cost model
+
+Pump.fun uses a **virtual constant-product bonding curve** (`k = v_sol × v_token`).
+
+- **1% fee** on every buy (deducted from SOL input before the curve) and every sell (deducted from SOL output after the curve).
+- **AMM price impact** for a 0.1 SOL probe at genesis reserves (v_sol=30, v_token=1.073B) ≈ 0.17%; for a 1 SOL full position ≈ 1.7%.
+- **Roundtrip cost model**: `ENTRY_SLIP = 0.013` (1% fee + ~0.3% AMM impact), `EXIT_SLIP = 0.013`.
+- All ROI numbers below are **gross** (no costs applied in the backtest sim); net ROI = gross ROI − 2.6% roundtrip.
+- The AMM two-stage simulation (`eda/two_stage_sim.py`) with `fill_mode="amm"` shows net PnL turns negative on an unfiltered 20k-token universe — confirming that model selection is load-bearing.
+""")
+
+
+@app.cell
+def _():
+    ENTRY_SLIP = 0.013
+    EXIT_SLIP = 0.013
+    return ENTRY_SLIP, EXIT_SLIP
 
 
 @app.cell
 def _(df, np, oof):
     _mask = ~np.isnan(oof)
     _thresh = np.quantile(oof[_mask], 0.9)
-    buy_ids = df["token_id"].to_numpy()[_mask][oof[_mask] >= _thresh].tolist()
-    return (buy_ids,)
+
+    _valid_ids = df["token_id"].to_numpy()[_mask]
+    _valid_scores = oof[_mask]
+
+    model_ids = _valid_ids[_valid_scores >= _thresh].tolist()
+
+    rng = np.random.default_rng(42)
+    random_ids = rng.choice(_valid_ids, size=len(model_ids), replace=False).tolist()
+
+    return model_ids, random_ids
 
 
 @app.cell
-def _(SLOTS, buy_ids, pl):
+def _(SLOTS, model_ids, pl, random_ids):
+    _all_ids = list(set(model_ids) | set(random_ids))
     _raw = (
         pl.scan_parquet(SLOTS)
-        .filter(pl.col("token_id").is_in(buy_ids) & (pl.col("price_sol_per_token") > 0))
+        .filter(pl.col("token_id").is_in(_all_ids) & (pl.col("price_sol_per_token") > 0))
         .select("token_id", "seconds_since_deploy", "price_sol_per_token")
         .sort(["token_id", "seconds_since_deploy"])
         .collect()
@@ -142,7 +515,7 @@ def _(SLOTS, buy_ids, pl):
 
 
 @app.cell
-def _(dataclass, panels, np, pl):
+def _(ENTRY_SLIP, EXIT_SLIP, dataclass, np, panels, pl):
     @dataclass
     class Trade:
         token_id: int
@@ -150,61 +523,164 @@ def _(dataclass, panels, np, pl):
         exit_sec: int
         reason: str
 
-    def _trailing_30(tid, secs, prices):
-        entry = prices[0]
-        cum_max = entry
+    def sim_trailing(tid, secs, prices, entry_slip, exit_slip):
+        entry = prices[0] * (1 + entry_slip)
+        cum_max = prices[0]
         armed = False
         for i in range(1, len(prices)):
             cum_max = max(cum_max, prices[i])
-            if not armed and prices[i] >= 1.5 * entry:
+            if not armed and prices[i] >= 1.5 * prices[0]:
                 armed = True
             if armed and prices[i] <= 0.7 * cum_max:
-                return Trade(tid, prices[i] / entry - 1, int(secs[i]), "trail")
-            if prices[i] <= 0.4 * entry:
-                return Trade(tid, prices[i] / entry - 1, int(secs[i]), "sl_hard")
-        return Trade(tid, prices[-1] / entry - 1, int(secs[-1]), "timeout")
+                fill = prices[i] * (1 - exit_slip)
+                return Trade(tid, fill / entry - 1, int(secs[i]), "trail")
+            if prices[i] <= 0.4 * prices[0]:
+                fill = prices[i] * (1 - exit_slip)
+                return Trade(tid, fill / entry - 1, int(secs[i]), "sl_hard")
+        fill = prices[-1] * (1 - exit_slip)
+        return Trade(tid, fill / entry - 1, int(secs[-1]), "timeout")
 
-    trades = []
-    for _tid, _panel in panels.items():
-        _sub = _panel.filter(pl.col("seconds_since_deploy") <= 1800)
-        if _sub.height == 0:
-            continue
-        trades.append(_trailing_30(
-            _tid,
-            _sub["seconds_since_deploy"].to_numpy(),
-            _sub["price_sol_per_token"].to_numpy(),
-        ))
+    def run_backtest(ids, panels, entry_slip, exit_slip):
+        trades = []
+        for tid in ids:
+            panel = panels.get(tid)
+            if panel is None:
+                continue
+            sub = panel.filter(pl.col("seconds_since_deploy") <= 1800)
+            if sub.height == 0:
+                continue
+            trades.append(sim_trailing(
+                tid,
+                sub["seconds_since_deploy"].to_numpy(),
+                sub["price_sol_per_token"].to_numpy(),
+                entry_slip, exit_slip,
+            ))
+        return trades
 
-    rois = np.array([t.roi for t in trades])
-    return Trade, rois, trades
+    trades_model = run_backtest(model_ids, panels, ENTRY_SLIP, EXIT_SLIP)
+    trades_random = run_backtest(random_ids, panels, ENTRY_SLIP, EXIT_SLIP)
+
+    rois_m = np.array([t.roi for t in trades_model])
+    rois_r = np.array([t.roi for t in trades_random])
+    return Trade, rois_m, rois_r, run_backtest, sim_trailing, trades_model, trades_random
 
 
 @app.cell
-def _(Counter, mo, np, plt, rois, trades):
-    _sorted = sorted(trades, key=lambda t: t.exit_sec)
-    _cum = np.cumsum([t.roi for t in _sorted])
-    _reasons = Counter(t.reason for t in trades)
+def _(Counter, ENTRY_SLIP, EXIT_SLIP, mo, np, plt, rois_m, rois_r, trades_model, trades_random):
+    _sm = sorted(trades_model, key=lambda t: t.exit_sec)
+    _sr = sorted(trades_random, key=lambda t: t.exit_sec)
 
-    fig_eq, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    _wealth_m = np.cumprod(1 + np.array([t.roi for t in _sm]))
+    _wealth_r = np.cumprod(1 + np.array([t.roi for t in _sr]))
 
-    ax1.plot(_cum, lw=1.5)
-    ax1.axhline(0, color="grey", lw=0.5, ls="--")
-    ax1.set_xlabel("trade #")
-    ax1.set_ylabel("cumulative ROI (SOL)")
-    ax1.set_title(f"trailing_30  n={len(trades)}  mean={rois.mean():.3f}")
+    _reasons_m = Counter(t.reason for t in trades_model)
+    _reasons_r = Counter(t.reason for t in trades_random)
 
-    ax2.bar(list(_reasons.keys()), list(_reasons.values()), color="#4878cf")
-    ax2.set_title("exit reasons")
-    ax2.set_xlabel("reason")
+    fig_eq, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+
+    ax1.plot(_wealth_m, lw=1.8, label=f"model top-10% (n={len(trades_model)})", color="#2563eb")
+    ax1.plot(_wealth_r, lw=1.2, label=f"random (n={len(trades_random)})", color="#dc2626", alpha=0.7)
+    ax1.axhline(1.0, color="grey", lw=0.7, ls="--")
+    ax1.set_yscale("log")
+    ax1.set_xlabel("trade # (sorted by exit time)")
+    ax1.set_ylabel("cumulative wealth (SOL per SOL, log scale)")
+    ax1.set_title("Backtest equity — trailing_30 with pump.fun costs")
+    ax1.legend()
+
+    _cost_txt = (
+        f"Cost model\n"
+        f"  entry slip: {ENTRY_SLIP*100:.1f}%\n"
+        f"  exit slip:  {EXIT_SLIP*100:.1f}%\n"
+        f"  (1% pump fee + ~0.3% AMM impact)"
+    )
+    ax1.text(0.02, 0.03, _cost_txt, transform=ax1.transAxes,
+             fontsize=8, va="bottom", family="monospace",
+             bbox=dict(boxstyle="round", fc="white", alpha=0.8))
+
+    _all_reasons = sorted(set(_reasons_m) | set(_reasons_r))
+    _x = np.arange(len(_all_reasons))
+    _w = 0.35
+    ax2.bar(_x - _w/2, [_reasons_m.get(r, 0) for r in _all_reasons], _w, label="model", color="#2563eb")
+    ax2.bar(_x + _w/2, [_reasons_r.get(r, 0) for r in _all_reasons], _w, label="random", color="#dc2626", alpha=0.8)
+    ax2.set_xticks(_x)
+    ax2.set_xticklabels(_all_reasons)
+    ax2.set_title("Exit reason distribution")
     ax2.set_ylabel("count")
+    ax2.legend()
 
     plt.tight_layout()
-    mo.vstack([fig_eq, mo.md(
-        f"**win rate** {(rois > 0).mean():.3f}  |  "
-        f"**median ROI** {float(np.median(rois)):.4f}  |  "
-        f"**p10/p90** {float(np.quantile(rois, .1)):.4f} / {float(np.quantile(rois, .9)):.4f}  |  "
-        f"**worst** {float(rois.min()):.4f}"
-    )])
+
+    _net_m = float(np.sum(rois_m))
+    _net_r = float(np.sum(rois_r))
+
+    mo.vstack([
+        fig_eq,
+        mo.md(f"""
+### Backtest summary (trailing_30, 30-min window, net of {(ENTRY_SLIP+EXIT_SLIP)*100:.1f}% roundtrip cost)
+
+|  | Model top-10% | Random |
+|--|--|--|
+| n trades | {len(trades_model)} | {len(trades_random)} |
+| win rate | {(rois_m > 0).mean():.3f} | {(rois_r > 0).mean():.3f} |
+| mean ROI | {rois_m.mean():.4f} | {rois_r.mean():.4f} |
+| median ROI | {float(np.median(rois_m)):.4f} | {float(np.median(rois_r)):.4f} |
+| p10 / p90 | {float(np.quantile(rois_m,.1)):.3f} / {float(np.quantile(rois_m,.9)):.3f} | {float(np.quantile(rois_r,.1)):.3f} / {float(np.quantile(rois_r,.9)):.3f} |
+| total PnL (SOL) | {_net_m:.2f} | {_net_r:.2f} |
+| worst trade | {float(rois_m.min()):.4f} | {float(rois_r.min()):.4f} |
+"""),
+    ])
+    return ax1, ax2, fig_eq
+
+
+@app.cell
+def _(booster, df, meta_features_df, mo, model_cols, np, oof, pl, prep):
+    _feat_all = df.join(meta_features_df.select(
+        [c for c in meta_features_df.columns if c not in df.columns or c == "token_id"]
+    ), on="token_id", how="left")
+
+    _X_all, _, _ = prep(_feat_all, model_cols, "hit_2x")
+    _scores = booster.predict(_X_all)
+
+    _out = df.select("token_id", "deploy_time_unix").with_columns(
+        pl.Series("score", _scores, dtype=pl.Float64)
+    )
+    if "hit_2x" in df.columns:
+        _out = _out.with_columns(df["hit_2x"])
+
+    _mask_oof = ~np.isnan(oof)
+    _oof_scores = oof[_mask_oof]
+    _oof_ids = df["token_id"].to_numpy()[_mask_oof]
+
+    _oof_out = pl.DataFrame({
+        "token_id": _oof_ids,
+        "oof_score": _oof_scores,
+    })
+
+    scored_df = _out.join(_oof_out, on="token_id", how="left")
+    top1000 = scored_df.sort("score", descending=True).head(1000)
+    return scored_df, top1000
+
+
+@app.cell
+def _(OUT_CSV, mo, top1000):
+    OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
+    top1000.write_csv(OUT_CSV)
+    mo.md(f"""
+### Scored submission
+
+Top 1000 tokens by model score written to `{OUT_CSV}`.
+
+Score = full-dataset predict (not OOF — use `oof_score` column for unbiased evaluation on trained tokens).
+`oof_score` is null for the first fold (no walk-forward prediction for fold 0's training set).
+""")
+
+
+@app.cell
+def _(mo, top1000):
+    mo.vstack([
+        mo.md("**Top 20 by model score**"),
+        top1000.head(20),
+    ])
 
 
 if __name__ == "__main__":
