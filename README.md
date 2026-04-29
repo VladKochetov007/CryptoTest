@@ -1,5 +1,6 @@
 # Pump.fun Pre-Buy Scoring & Exit Strategy
 
+# CONTAINS A LOT OF LEAKS AND INCORRECT EXECUTION MECHANICS
 End-to-end quant prototype on 500k Pump.fun tokens (2026-04-01 → 2026-04-20).
 
 Solves both parts of the test task: instant buy/skip decision in <300 ms and post-launch exit strategies.
