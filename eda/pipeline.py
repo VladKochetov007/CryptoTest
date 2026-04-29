@@ -51,7 +51,6 @@ def _():
         description_features,
         funder_graph_features,
         image_hash_rolling_count,
-        json,
         lgb,
         macro_derived_features,
         meme_kw_rolling_win_rate,
@@ -61,7 +60,7 @@ def _():
         pl,
         plt,
         prep,
-        sys,
+        roc_auc_score,
         time,
         twitter_handle_features,
         twitter_handle_reuse_features,
@@ -72,15 +71,16 @@ def _():
 @app.cell
 def _(mo):
     mo.md("""
-# Pump.fun pre-buy scoring pipeline
+    # Pump.fun pre-buy scoring pipeline
 
-End-to-end notebook: raw parquet files → meta feature engineering → LightGBM → backtest → ranked submission CSV.
+    End-to-end notebook: raw parquet files → meta feature engineering → LightGBM → backtest → ranked submission CSV.
 
-**Label**: `hit_2x` — token reached 2× its launch market-cap within the first hour.
-**Base rate**: ~15% across the dataset.
-**Model**: `meta__lgbm` — 84 features (41 base + 43 meta), 5-fold expanding walk-forward with 1h embargo.
-**OOF AUC**: 0.7977 (vs instant baseline 0.7653, +324 bps).
-""")
+    **Label**: `hit_2x` — token reached 2× its launch market-cap within the first hour.
+    **Base rate**: ~15% across the dataset.
+    **Model**: `meta__lgbm` — 84 features (41 base + 43 meta), 5-fold expanding walk-forward with 1h embargo.
+    **OOF AUC**: 0.7977 (vs instant baseline 0.7653, +324 bps).
+    """)
+    return
 
 
 @app.cell
@@ -109,13 +109,11 @@ def _(
     description_features,
     feat,
     feat_full,
-    feat_raw,
     funder_graph_features,
     image_hash_rolling_count,
     macro_derived_features,
     meme_kw_rolling_win_rate,
     name_text_features,
-    pl,
     time,
     tokens,
     twitter_handle_features,
@@ -155,7 +153,7 @@ def _(
 
 
 @app.cell
-def _(feat_raw, meta_elapsed, meta_features_df, mo, pl):
+def _(feat_raw, meta_elapsed, meta_features_df, mo):
     _feat_base = feat_raw.drop_nulls("hit_2x").sort("deploy_time_unix")
     df = _feat_base.join(meta_features_df, on="token_id", how="left")
     mo.md(f"**Data ready** — {df.height:,} labeled tokens, meta features in {meta_elapsed:.1f}s")
@@ -207,188 +205,198 @@ def _():
     return BASE_FEATURES, META_FEATURES
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-## Feature reference
+    ## Feature reference
 
-All 84 features used by `meta__lgbm`. SHAP rank = mean |SHAP| rank on last OOF fold (2k sample).
+    All 84 features used by `meta__lgbm`. SHAP rank = mean |SHAP| rank on last OOF fold (2k sample).
 
-### Deployer wallet — on-chain economics (BASE)
+    ### Deployer wallet — on-chain economics (BASE)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `deployer_wallet_balance_after_sol` | 3 | + | SOL balance remaining after funding the token launch. Wealthy deployers tend to be more committed. |
-| `deployer_deposit_amount` | 4 | + | SOL deposited to bonding curve at launch. Higher deposit = more skin in the game. |
-| `deployer_wallet_balance_before` | 13 | + | Pre-deposit wallet balance. Proxy for deployer net worth. |
-| `deployer_wallet_source_amount_sol` | 20 | + | SOL amount sent by the funding wallet to the deployer. Low amount = drip-funder mule pattern. |
-| `is_cex` | — | + | Binary: funder wallet is a known CEX hot wallet. Weak as boolean; `deployer_wallet_source_cex_name` carries the real signal. |
-| `deployer_wallet_source_cex_name` | — | varies | Categorical CEX name. MEXC: +0.50 lift vs base; Gate.io: +1.41 lift. Binance/OKX near neutral. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `deployer_wallet_balance_after_sol` | 3 | + | SOL balance remaining after funding the token launch. Wealthy deployers tend to be more committed. |
+    | `deployer_deposit_amount` | 4 | + | SOL deposited to bonding curve at launch. Higher deposit = more skin in the game. |
+    | `deployer_wallet_balance_before` | 13 | + | Pre-deposit wallet balance. Proxy for deployer net worth. |
+    | `deployer_wallet_source_amount_sol` | 20 | + | SOL amount sent by the funding wallet to the deployer. Low amount = drip-funder mule pattern. |
+    | `is_cex` | — | + | Binary: funder wallet is a known CEX hot wallet. Weak as boolean; `deployer_wallet_source_cex_name` carries the real signal. |
+    | `deployer_wallet_source_cex_name` | — | varies | Categorical CEX name. MEXC: +0.50 lift vs base; Gate.io: +1.41 lift. Binance/OKX near neutral. |
 
-### Token metadata (BASE)
+    ### Token metadata (BASE)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `has_image` | 11 | + | Token has an uploaded image. 0 = likely bot/spam. SHAP ~0.06. |
-| `has_website` | — | + | Token has a website URL. |
-| `has_telegram` | — | + | Token has a Telegram link. |
-| `name_len` | — | mixed | Character length of token name. Very short or very long names are noisy. |
-| `ticker_len` | — | — | Character length of ticker symbol. |
-| `desc_len` | — | + | Character length of description. 0 = no description (bot signal). Continuous replacement for `has_desc`. |
-| `name_alpha_chars` | — | + | Count of alphabetic characters in name. |
-| `name_upper_chars` | 6 | + | Count of uppercase characters in name. Strong signal — SHAP 0.117. Reflects naming style patterns of successful deployers. |
-| `mint_suffix_pump` | 12 | + | Token mint address ends in "pump". SHAP ~0.059. Pump.fun generated mints always end in "pump"; some deployers use vanity mints. |
-| `deployer_suffix_pump` | — | + | Deployer address ends in "pump". Vanity address signal. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `has_image` | 11 | + | Token has an uploaded image. 0 = likely bot/spam. SHAP ~0.06. |
+    | `has_website` | — | + | Token has a website URL. |
+    | `has_telegram` | — | + | Token has a Telegram link. |
+    | `name_len` | — | mixed | Character length of token name. Very short or very long names are noisy. |
+    | `ticker_len` | — | — | Character length of ticker symbol. |
+    | `desc_len` | — | + | Character length of description. 0 = no description (bot signal). Continuous replacement for `has_desc`. |
+    | `name_alpha_chars` | — | + | Count of alphabetic characters in name. |
+    | `name_upper_chars` | 6 | + | Count of uppercase characters in name. Strong signal — SHAP 0.117. Reflects naming style patterns of successful deployers. |
+    | `mint_suffix_pump` | 12 | + | Token mint address ends in "pump". SHAP ~0.059. Pump.fun generated mints always end in "pump"; some deployers use vanity mints. |
+    | `deployer_suffix_pump` | — | + | Deployer address ends in "pump". Vanity address signal. |
 
-### Deployer history (BASE — instant window at deploy time)
+    ### Deployer history (BASE — instant window at deploy time)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `deployer_prior_n` | 18 | + | Total prior token count for this deployer (all-time). |
-| `deployer_prior_grad` | — | + | Prior graduation count for this deployer. Graduation = market-cap ≥ $69k. |
-| `deployer_prior_hit20k` | 14 | + | Prior count where market-cap exceeded $20k. Leading indicator of quality. |
-| `deployer_seconds_since_last` | 2 | — | Seconds since this deployer's previous token. Short gaps = serial spammer; very long gaps = infrequent = often quality. #2 by SHAP (0.381). |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `deployer_prior_n` | 18 | + | Total prior token count for this deployer (all-time). |
+    | `deployer_prior_grad` | — | + | Prior graduation count for this deployer. Graduation = market-cap ≥ $69k. |
+    | `deployer_prior_hit20k` | 14 | + | Prior count where market-cap exceeded $20k. Leading indicator of quality. |
+    | `deployer_seconds_since_last` | 2 | — | Seconds since this deployer's previous token. Short gaps = serial spammer; very long gaps = infrequent = often quality. #2 by SHAP (0.381). |
 
-### Funder history (BASE — instant window)
+    ### Funder history (BASE — instant window)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `funder_prior_n` | 16 | + | Prior token count funded by this wallet. |
-| `funder_prior_hit20k` | — | + | Prior count hitting $20k for this funder. |
-| `funder_prior_grad` | — | + | Prior graduation count for this funder. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `funder_prior_n` | 16 | + | Prior token count funded by this wallet. |
+    | `funder_prior_hit20k` | — | + | Prior count hitting $20k for this funder. |
+    | `funder_prior_grad` | — | + | Prior graduation count for this funder. |
 
-### Market activity at deploy time (BASE)
+    ### Market activity at deploy time (BASE)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `deploys_prev_15m` | — | — | Platform-wide deploy count in last 15 minutes. High = crowded market. |
-| `deploys_prev_60m` | — | — | Platform-wide deploy count in last 60 minutes. |
-| `hit20k_rate_prev_60m` | — | + | Platform-wide hit_20k rate over last 60 minutes. Regime indicator. |
-| `same_ticker_today_prev` | — | — | Prior tokens today with the same ticker. Clone signal. |
-| `same_name_prev_hour` | — | — | Prior tokens in the last hour with the same name. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `deploys_prev_15m` | — | — | Platform-wide deploy count in last 15 minutes. High = crowded market. |
+    | `deploys_prev_60m` | — | — | Platform-wide deploy count in last 60 minutes. |
+    | `hit20k_rate_prev_60m` | — | + | Platform-wide hit_20k rate over last 60 minutes. Regime indicator. |
+    | `same_ticker_today_prev` | — | — | Prior tokens today with the same ticker. Clone signal. |
+    | `same_name_prev_hour` | — | — | Prior tokens in the last hour with the same name. |
 
-### Clock features (BASE)
+    ### Clock features (BASE)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `utc_sin`, `utc_cos` | — | cyclic | Hour-of-day encoded as sin/cos for smooth cyclical representation. |
-| `utc_hour` | — | cyclic | UTC hour integer. |
-| `utc_dow` | — | cyclic | UTC day of week (0=Mon). |
-| `ny_hour` | — | cyclic | Hour in New York timezone (US market hours). |
-| `ldn_hour` | — | cyclic | Hour in London timezone (EU market hours). |
-| `tokyo_hour` | — | cyclic | Hour in Tokyo timezone (Asian market hours). |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `utc_sin`, `utc_cos` | — | cyclic | Hour-of-day encoded as sin/cos for smooth cyclical representation. |
+    | `utc_hour` | — | cyclic | UTC hour integer. |
+    | `utc_dow` | — | cyclic | UTC day of week (0=Mon). |
+    | `ny_hour` | — | cyclic | Hour in New York timezone (US market hours). |
+    | `ldn_hour` | — | cyclic | Hour in London timezone (EU market hours). |
+    | `tokyo_hour` | — | cyclic | Hour in Tokyo timezone (Asian market hours). |
 
-### Stationary macro — realized volatility and returns (BASE)
+    ### Stationary macro — realized volatility and returns (BASE)
 
-All price-level features (btc_close, sol_close) are excluded — non-stationary I(1) processes that encode bull/bear regime, not a generalizing signal.
+    All price-level features (btc_close, sol_close) are excluded — non-stationary I(1) processes that encode bull/bear regime, not a generalizing signal.
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `sol_vol_1h` | — | — | SOL realized vol: std of 5-minute log-returns over last 1h. High vol = choppy market. |
-| `sol_vol_24h` | — | — | SOL realized vol over last 24h. |
-| `sol_ret_1h` | — | + | SOL 1h percentage return. |
-| `sol_ret_24h` | — | + | SOL 24h percentage return. |
-| `btc_vol_1h` | — | — | BTC realized vol over 1h. |
-| `btc_ret_1h` | — | + | BTC 1h percentage return. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `sol_vol_1h` | — | — | SOL realized vol: std of 5-minute log-returns over last 1h. High vol = choppy market. |
+    | `sol_vol_24h` | — | — | SOL realized vol over last 24h. |
+    | `sol_ret_1h` | — | + | SOL 1h percentage return. |
+    | `sol_ret_24h` | — | + | SOL 24h percentage return. |
+    | `btc_vol_1h` | — | — | BTC realized vol over 1h. |
+    | `btc_ret_1h` | — | + | BTC 1h percentage return. |
 
----
+    ---
 
-### Multi-scale deployer history (META — rolling windows, O(N log N) per group)
+    ### Multi-scale deployer history (META — rolling windows, O(N log N) per group)
 
-Computed via `compute_rolling_group_features`: cumsum + searchsorted, strictly past (side="left" on hi), tie-safe.
+    Computed via `compute_rolling_group_features`: cumsum + searchsorted, strictly past (side="left" on hi), tie-safe.
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `deployer_hr_7d` | **1** | + | Deployer hit_2x rate over last 7 days. Top feature by SHAP (0.693). Serial winners are persistent. |
-| `deployer_hr_24h` | 5 | + | Deployer hit_2x rate over last 24h. Short-term momentum. SHAP 0.131. |
-| `deployer_hr_1h` | 8 | + | Deployer hit_2x rate over last 1h. Very fresh signal. SHAP 0.064. |
-| `deployer_prior_n_7d` | 9 | + | Deployer token count in last 7 days. Active deployers. SHAP 0.061. |
-| `deployer_prior_n_24h` | — | + | Deployer token count in last 24h. |
-| `deployer_prior_n_6h` | — | + | Deployer token count in last 6h. |
-| `deployer_prior_n_1h` | — | + | Deployer token count in last 1h. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `deployer_hr_7d` | **1** | + | Fraction of this deployer's own prior tokens (past 7 days) that hit 2×. Top feature by SHAP (0.693). Deployers who consistently launch successful tokens keep doing so. |
+    | `deployer_hr_24h` | 5 | + | Same hit rate over the past 24h only — captures recent hot-streak or cool-off. SHAP 0.131. |
+    | `deployer_hr_1h` | 8 | + | Same hit rate over the past 1h — very fresh momentum signal. SHAP 0.064. |
+    | `deployer_prior_n_7d` | 9 | + | Deployer token count in last 7 days. Active deployers. SHAP 0.061. |
+    | `deployer_prior_n_24h` | — | + | Deployer token count in last 24h. |
+    | `deployer_prior_n_6h` | — | + | Deployer token count in last 6h. |
+    | `deployer_prior_n_1h` | — | + | Deployer token count in last 1h. |
 
-### Multi-scale funder history (META)
+    ### Multi-scale funder history (META)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `funder_hr_7d` | 15 | + | Funder hit_2x rate over last 7 days. SHAP 0.054. Smart-money funder signal. |
-| `funder_hr_24h` | — | + | Funder hit_2x rate over last 24h. |
-| `funder_prior_n_7d` | — | + | Funder token count in last 7 days. |
-| `funder_prior_n_24h` | — | + | Funder token count in last 24h. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `funder_hr_7d` | 15 | + | Fraction of tokens funded by this wallet (past 7 days) that hit 2×. SHAP 0.054. Smart-money funder signal. |
+    | `funder_hr_24h` | — | + | Same hit rate over the past 24h. |
+    | `funder_prior_n_7d` | — | + | Funder token count in last 7 days. |
+    | `funder_prior_n_24h` | — | + | Funder token count in last 24h. |
 
-### Funder graph features (META — past-only snapshot per token)
+    ### Funder graph features (META — past-only snapshot per token)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `funder_seconds_since_last` | — | — | Seconds since funder's previous funding event. Rapid-fire funders are spammers. |
-| `funder_unique_deployers_prior` | — | mixed | Distinct deployer addresses this funder has funded (all past). |
-| `funder_concentration_hhi` | — | — | HHI = Σ(pᵢ²) over deployer-share distribution. HHI=1 means one deployer monopolizes this funder (sybil signal). |
-| `funder_avg_deposit_sol_prior` | — | + | Mean SOL amount deposited by this funder historically. |
-| `funder_is_dust_funder` | — | — | 1 if deposit < 0.5 SOL AND prior_n > 5. Drip-fund mule wallet pattern. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `funder_seconds_since_last` | — | — | Seconds since funder's previous funding event. Rapid-fire funders are spammers. |
+    | `funder_unique_deployers_prior` | — | mixed | Distinct deployer addresses this funder has funded (all past). |
+    | `funder_concentration_hhi` | — | — | HHI = Σ(pᵢ²) over deployer-share distribution. HHI=1 means one deployer monopolizes this funder (sybil signal). |
+    | `funder_avg_deposit_sol_prior` | — | + | Mean SOL amount deposited by this funder historically. |
+    | `funder_is_dust_funder` | — | — | 1 if deposit < 0.5 SOL AND prior_n > 5. Drip-fund mule wallet pattern. |
 
-### Twitter handle — sybil and quality signals (META)
+    ### Twitter handle — sybil and quality signals (META)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `handle_hr_24h` | 7 | + | Hit_2x rate for tokens sharing this twitter handle, last 24h. SHAP 0.101. |
-| `handle_prior_n_24h` | — | + | Token count for this handle, last 24h. |
-| `handle_unique_deployers_7d` | — | — | Distinct deployer addresses using this handle in last 7 days. >1 = handle shared across wallets (sybil signal). |
-| `handle_len` | — | + | Character length of twitter handle. 0 = no handle. Continuous replacement for has_twitter. |
-| `handle_digit_ratio` | — | — | Fraction of digits in handle. High ratio = generated/bot handle. |
-| `handle_has_underscore` | — | mixed | Handle contains underscore. |
-| `handle_ends_in_digits` | — | — | Handle ends in digits. Bot-name pattern. |
-| `handle_is_celeb` | — | mixed | Handle matches a known celebrity (Elon, Trump, Vitalik, etc.). Often impersonation. |
-| `handle_contains_ticker` | — | + | Handle starts or ends with the token's ticker symbol. Authentic branding signal. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `handle_hr_24h` | 7 | + | Fraction of prior tokens that used this twitter handle (past 24h) and hit 2×. SHAP 0.101. |
+    | `handle_prior_n_24h` | — | + | Token count for this handle, last 24h. |
+    | `handle_unique_deployers_7d` | — | — | Distinct deployer addresses using this handle in last 7 days. >1 = handle shared across wallets (sybil signal). |
+    | `handle_len` | — | + | Character length of twitter handle. 0 = no handle. Continuous replacement for has_twitter. |
+    | `handle_digit_ratio` | — | — | Fraction of digits in handle. High ratio = generated/bot handle. |
+    | `handle_has_underscore` | — | mixed | Handle contains underscore. |
+    | `handle_ends_in_digits` | — | — | Handle ends in digits. Bot-name pattern. |
+    | `handle_is_celeb` | — | mixed | Handle matches a known celebrity (Elon, Trump, Vitalik, etc.). Often impersonation. |
+    | `handle_contains_ticker` | — | + | Handle starts or ends with the token's ticker symbol. Authentic branding signal. |
 
-### Description text features (META)
+    ### Description text features (META)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `desc_word_count` | — | + | Word count of token description. 0 = no description. |
-| `desc_has_url` | — | mixed | Description contains a URL. |
-| `desc_has_deployed_template` | — | — | Description contains "deployed using" — pump.fun auto-generated template. Quality-negative signal. |
-| `desc_exclamation_count` | — | — | Exclamation marks in description. Hype-language indicator. |
-| `desc_template_score` | — | — | Count of known hype phrases ("100x", "safe", "no rug", etc.) in description. Higher = more copy-paste spam. |
-| `desc_has_address` | — | mixed | Description contains a base58 address string. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `desc_word_count` | — | + | Word count of token description. 0 = no description. |
+    | `desc_has_url` | — | mixed | Description contains a URL. |
+    | `desc_has_deployed_template` | — | — | Description contains "deployed using" — pump.fun auto-generated template. Quality-negative signal. |
+    | `desc_exclamation_count` | — | — | Exclamation marks in description. Hype-language indicator. |
+    | `desc_template_score` | — | — | Count of known hype phrases ("100x", "safe", "no rug", etc.) in description. Higher = more copy-paste spam. |
+    | `desc_has_address` | — | mixed | Description contains a base58 address string. |
 
-### Name/ticker text features (META)
+    ### Name/ticker text features (META)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `name_word_count` | 19 | + | Word count in token name. Multi-word names often more intentional. SHAP 0.039. |
-| `name_digit_count` | — | — | Digit count in name. Random-generated names often contain digits. |
-| `name_has_meme_kw` | — | mixed | Name contains a meme keyword (doge, pepe, moon, etc.). Low IV — very common, not selective. |
-| `ticker_has_meme_kw` | — | mixed | Ticker contains a meme keyword. |
-| `ticker_digit_count` | — | — | Digit count in ticker. |
-| `ticker_special_count` | — | — | Special character count in ticker. |
-| `ticker_len_4_5` | — | + | Ticker length is 4 or 5 characters. Common among legitimate tokens. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `name_word_count` | 19 | + | Word count in token name. Multi-word names often more intentional. SHAP 0.039. |
+    | `name_digit_count` | — | — | Digit count in name. Random-generated names often contain digits. |
+    | `name_has_meme_kw` | — | mixed | Name contains a meme keyword (doge, pepe, moon, etc.). Low IV — very common, not selective. |
+    | `ticker_has_meme_kw` | — | mixed | Ticker contains a meme keyword. |
+    | `ticker_digit_count` | — | — | Digit count in ticker. |
+    | `ticker_special_count` | — | — | Special character count in ticker. |
+    | `ticker_len_4_5` | — | + | Ticker length is 4 or 5 characters. Common among legitimate tokens. |
 
-### Meme keyword regime (META)
+    ### Meme keyword regime (META)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `meme_kw_hr_24h` | 17 | + | Rolling 24h hit_2x rate for the meme-keyword category (15-min bucket aggregation, shift by 1 bucket). Regime signal: when meme tokens are hot, the signal lifts. SHAP 0.049. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `meme_kw_hr_24h` | 17 | + | Rolling 24h hit_2x rate for the meme-keyword category (15-min bucket aggregation, shift by 1 bucket). Regime signal: when meme tokens are hot, the signal lifts. SHAP 0.049. |
 
-### Image reuse (META)
+    ### Image reuse (META)
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `image_hash_prior_count` | 10 | — | Count of prior tokens using the same SHA256 image hash. 0 = no image or first use. Recycled images = serial copycats. SHAP 0.060. |
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `image_hash_prior_count` | 10 | — | Count of prior tokens using the same SHA256 image hash. 0 = no image or first use. Recycled images = serial copycats. SHAP 0.060. |
 
-### Stationary macro derived (META)
+    ### Stationary macro derived (META)
 
-Computed in `build_meta_features.macro_derived_features` from already-stationary inputs.
+    Computed in `build_meta_features.macro_derived_features` from already-stationary inputs.
 
-| Feature | SHAP rank | Direction | Description |
-|---|---|---|---|
-| `btc_ret_24h` | — | + | BTC 24h percentage return (via join_asof on token timestamps — many tokens share 5-min bars). |
-| `sol_vol_ratio` | — | mixed | sol_vol_1h / sol_vol_24h. Short-term vs long-term vol ratio. >1 = vol spike (intraday). |
-| `sol_btc_ret_spread` | — | + | sol_ret_1h − btc_ret_1h. SOL excess return over BTC at 1h horizon. |
-""")
+    | Feature | SHAP rank | Direction | Description |
+    |---|---|---|---|
+    | `btc_ret_24h` | — | + | BTC 24h percentage return (via join_asof on token timestamps — many tokens share 5-min bars). |
+    | `sol_vol_ratio` | — | mixed | sol_vol_1h / sol_vol_24h. Short-term vs long-term vol ratio. >1 = vol spike (intraday). |
+    | `sol_btc_ret_spread` | — | + | sol_ret_1h − btc_ret_1h. SOL excess return over BTC at 1h horizon. |
+    """)
+    return
 
 
 @app.cell
-def _(BASE_FEATURES, META_FEATURES, df, lgb, np, prep, roc_auc_score, walkforward_splits):
+def _(
+    BASE_FEATURES,
+    META_FEATURES,
+    df,
+    lgb,
+    np,
+    prep,
+    roc_auc_score,
+    walkforward_splits,
+):
     _all_cols = BASE_FEATURES + META_FEATURES
     model_cols = [c for c in _all_cols if c in df.columns]
 
@@ -442,7 +450,7 @@ def _(df, fold_aucs, mo, np, oof, pl, roc_auc_score):
         mo.stat(label="base_rate", value=f"{df['hit_2x'].mean():.3f}"),
         mo.vstack([mo.md("**Fold AUCs**"), _fold_tbl]),
     ])
-    return (oof_auc,)
+    return
 
 
 @app.cell
@@ -460,21 +468,23 @@ def _(booster, model_cols, np, plt):
     _ax.set_title("Top 30 features — LightGBM gain")
     plt.tight_layout()
     fig_imp
+    return
 
 
 @app.cell
 def _(mo):
     mo.md("""
-## Transaction cost model
+    ## Transaction cost model
 
-Pump.fun uses a **virtual constant-product bonding curve** (`k = v_sol × v_token`).
+    Pump.fun uses a **virtual constant-product bonding curve** (`k = v_sol × v_token`).
 
-- **1% fee** on every buy (deducted from SOL input before the curve) and every sell (deducted from SOL output after the curve).
-- **AMM price impact** for a 0.1 SOL probe at genesis reserves (v_sol=30, v_token=1.073B) ≈ 0.17%; for a 1 SOL full position ≈ 1.7%.
-- **Roundtrip cost model**: `ENTRY_SLIP = 0.013` (1% fee + ~0.3% AMM impact), `EXIT_SLIP = 0.013`.
-- All ROI numbers below are **gross** (no costs applied in the backtest sim); net ROI = gross ROI − 2.6% roundtrip.
-- The AMM two-stage simulation (`eda/two_stage_sim.py`) with `fill_mode="amm"` shows net PnL turns negative on an unfiltered 20k-token universe — confirming that model selection is load-bearing.
-""")
+    - **1% fee** on every buy (deducted from SOL input before the curve) and every sell (deducted from SOL output after the curve).
+    - **AMM price impact** for a 0.1 SOL probe at genesis reserves (v_sol=30, v_token=1.073B) ≈ 0.17%; for a 1 SOL full position ≈ 1.7%.
+    - **Roundtrip cost model**: `ENTRY_SLIP = 0.013` (1% fee + ~0.3% AMM impact), `EXIT_SLIP = 0.013`.
+    - All ROI numbers below are **gross** (no costs applied in the backtest sim); net ROI = gross ROI − 2.6% roundtrip.
+    - The AMM two-stage simulation (`eda/two_stage_sim.py`) with `fill_mode="amm"` shows net PnL turns negative on an unfiltered 20k-token universe — confirming that model selection is load-bearing.
+    """)
+    return
 
 
 @app.cell
@@ -496,13 +506,12 @@ def _(df, np, oof):
 
     rng = np.random.default_rng(42)
     random_ids = rng.choice(_valid_ids, size=len(model_ids), replace=False).tolist()
-
     return model_ids, random_ids
 
 
 @app.cell
 def _(SLOTS, model_ids, pl, random_ids):
-    _all_ids = list(set(model_ids) | set(random_ids))
+    _all_ids = pl.Series("token_id", list(set(model_ids) | set(random_ids)), dtype=pl.Int32)
     _raw = (
         pl.scan_parquet(SLOTS)
         .filter(pl.col("token_id").is_in(_all_ids) & (pl.col("price_sol_per_token") > 0))
@@ -515,7 +524,7 @@ def _(SLOTS, model_ids, pl, random_ids):
 
 
 @app.cell
-def _(ENTRY_SLIP, EXIT_SLIP, dataclass, np, panels, pl):
+def _(ENTRY_SLIP, EXIT_SLIP, dataclass, model_ids, np, panels, pl, random_ids):
     @dataclass
     class Trade:
         token_id: int
@@ -562,11 +571,22 @@ def _(ENTRY_SLIP, EXIT_SLIP, dataclass, np, panels, pl):
 
     rois_m = np.array([t.roi for t in trades_model])
     rois_r = np.array([t.roi for t in trades_random])
-    return Trade, rois_m, rois_r, run_backtest, sim_trailing, trades_model, trades_random
+    return rois_m, rois_r, trades_model, trades_random
 
 
 @app.cell
-def _(Counter, ENTRY_SLIP, EXIT_SLIP, mo, np, plt, rois_m, rois_r, trades_model, trades_random):
+def _(
+    Counter,
+    ENTRY_SLIP,
+    EXIT_SLIP,
+    mo,
+    np,
+    plt,
+    rois_m,
+    rois_r,
+    trades_model,
+    trades_random,
+):
     _sm = sorted(trades_model, key=lambda t: t.exit_sec)
     _sr = sorted(trades_random, key=lambda t: t.exit_sec)
 
@@ -610,8 +630,11 @@ def _(Counter, ENTRY_SLIP, EXIT_SLIP, mo, np, plt, rois_m, rois_r, trades_model,
 
     plt.tight_layout()
 
-    _net_m = float(np.sum(rois_m))
-    _net_r = float(np.sum(rois_r))
+    def _fmt(arr, fn):
+        return f"{fn(arr):.3f}" if len(arr) > 0 else "n/a"
+
+    _net_m = float(np.sum(rois_m)) if len(rois_m) > 0 else 0.0
+    _net_r = float(np.sum(rois_r)) if len(rois_r) > 0 else 0.0
 
     mo.vstack([
         fig_eq,
@@ -621,43 +644,47 @@ def _(Counter, ENTRY_SLIP, EXIT_SLIP, mo, np, plt, rois_m, rois_r, trades_model,
 |  | Model top-10% | Random |
 |--|--|--|
 | n trades | {len(trades_model)} | {len(trades_random)} |
-| win rate | {(rois_m > 0).mean():.3f} | {(rois_r > 0).mean():.3f} |
-| mean ROI | {rois_m.mean():.4f} | {rois_r.mean():.4f} |
-| median ROI | {float(np.median(rois_m)):.4f} | {float(np.median(rois_r)):.4f} |
-| p10 / p90 | {float(np.quantile(rois_m,.1)):.3f} / {float(np.quantile(rois_m,.9)):.3f} | {float(np.quantile(rois_r,.1)):.3f} / {float(np.quantile(rois_r,.9)):.3f} |
+| win rate | {_fmt(rois_m, lambda a: (a > 0).mean())} | {_fmt(rois_r, lambda a: (a > 0).mean())} |
+| mean ROI | {_fmt(rois_m, np.mean)} | {_fmt(rois_r, np.mean)} |
+| median ROI | {_fmt(rois_m, np.median)} | {_fmt(rois_r, np.median)} |
+| p10 / p90 | {_fmt(rois_m, lambda a: np.quantile(a,.1))} / {_fmt(rois_m, lambda a: np.quantile(a,.9))} | {_fmt(rois_r, lambda a: np.quantile(a,.1))} / {_fmt(rois_r, lambda a: np.quantile(a,.9))} |
 | total PnL (SOL) | {_net_m:.2f} | {_net_r:.2f} |
-| worst trade | {float(rois_m.min()):.4f} | {float(rois_r.min()):.4f} |
+| worst trade | {_fmt(rois_m, np.min)} | {_fmt(rois_r, np.min)} |
 """),
     ])
-    return ax1, ax2, fig_eq
+    return
 
 
 @app.cell
-def _(booster, df, meta_features_df, mo, model_cols, np, oof, pl, prep):
-    _feat_all = df.join(meta_features_df.select(
-        [c for c in meta_features_df.columns if c not in df.columns or c == "token_id"]
-    ), on="token_id", how="left")
-
-    _X_all, _, _ = prep(_feat_all, model_cols, "hit_2x")
-    _scores = booster.predict(_X_all)
-
-    _out = df.select("token_id", "deploy_time_unix").with_columns(
-        pl.Series("score", _scores, dtype=pl.Float64)
-    )
-    if "hit_2x" in df.columns:
-        _out = _out.with_columns(df["hit_2x"])
-
+def _(ROOT, df, np, oof, pl, tokens):
+    # oof_score: unbiased — each token scored only on folds it was NOT trained on.
+    # Tokens in the first training block have no OOF score (walk-forward has no fold 0 val set).
+    # For the ranked submission we use oof_score as the ranking key (honest).
     _mask_oof = ~np.isnan(oof)
-    _oof_scores = oof[_mask_oof]
-    _oof_ids = df["token_id"].to_numpy()[_mask_oof]
-
     _oof_out = pl.DataFrame({
-        "token_id": _oof_ids,
-        "oof_score": _oof_scores,
+        "token_id": pl.Series(df["token_id"].to_numpy()[_mask_oof], dtype=pl.Int32),
+        "oof_score": pl.Series(oof[_mask_oof], dtype=pl.Float64),
     })
 
-    scored_df = _out.join(_oof_out, on="token_id", how="left")
-    top1000 = scored_df.sort("score", descending=True).head(1000)
+    # join metadata: name, ticker so a human can read the output
+    _meta = tokens.select("token_id", "name", "ticker")
+
+    scored_df = (
+        df.select("token_id", "deploy_time_unix", "hit_2x")
+        .join(_oof_out, on="token_id", how="left")
+        .join(_meta, on="token_id", how="left")
+    )
+
+    # rank by oof_score; tokens with null oof_score (earliest training block) go to the bottom
+    top1000 = (
+        scored_df
+        .filter(pl.col("oof_score").is_not_null())
+        .sort("oof_score", descending=True)
+        .head(1000)
+        .with_columns(pl.lit("buy").alias("decision"))
+        .select("token_id", "name", "ticker", "deploy_time_unix",
+                "oof_score", "hit_2x", "decision")
+    )
     return scored_df, top1000
 
 
@@ -668,19 +695,26 @@ def _(OUT_CSV, mo, top1000):
     mo.md(f"""
 ### Scored submission
 
-Top 1000 tokens by model score written to `{OUT_CSV}`.
+Top 1000 tokens written to `{OUT_CSV}`, ranked by `oof_score`.
 
-Score = full-dataset predict (not OOF — use `oof_score` column for unbiased evaluation on trained tokens).
-`oof_score` is null for the first fold (no walk-forward prediction for fold 0's training set).
+**`oof_score`** — model probability from the fold where this token was *validation*, not training.
+This is the unbiased estimate. All 84 features are strictly pre-deploy (no post-deploy columns used).
+
+**`hit_2x`** — observed ground-truth label (did this token actually double?). Included for evaluation only,
+never used as a model feature.
+
+**`decision`** — "buy" for all 1000 rows (top-decile by model score).
 """)
+    return
 
 
 @app.cell
 def _(mo, top1000):
     mo.vstack([
-        mo.md("**Top 20 by model score**"),
+        mo.md("**Top 20 by OOF score**"),
         top1000.head(20),
     ])
+    return
 
 
 if __name__ == "__main__":
