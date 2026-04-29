@@ -329,6 +329,67 @@ def name_text_features(tokens: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+def image_hash_rolling_count(feat: pl.DataFrame, tokens: pl.DataFrame) -> pl.DataFrame:
+    """Count of prior tokens with the same SHA256 image hash (strictly past, 0 = no image or first use)."""
+    tok_img = (
+        feat.select("token_id", "deploy_time_unix")
+        .join(tokens.select("token_id", "image_hash_sha256"), on="token_id", how="left")
+    )
+    all_tids = tok_img["token_id"].to_list()
+    has_img = tok_img.filter(pl.col("image_hash_sha256").is_not_null())
+
+    prior_counts: dict[int, int] = {}
+    for row in has_img.group_by("image_hash_sha256").agg(
+        pl.col("token_id").alias("tids"),
+        pl.col("deploy_time_unix").alias("times"),
+    ).iter_rows(named=True):
+        times = np.array(row["times"], dtype=np.int64)
+        tids = np.array(row["tids"], dtype=np.int32)
+        order = np.argsort(times, kind="stable")
+        for rank, tid in enumerate(tids[order]):
+            prior_counts[int(tid)] = rank
+
+    return pl.DataFrame({
+        "token_id": all_tids,
+        "image_hash_prior_count": pl.Series(
+            [prior_counts.get(t, 0) for t in all_tids], dtype=pl.Int32
+        ),
+    })
+
+
+def macro_derived_features(feat: pl.DataFrame) -> pl.DataFrame:
+    """Stationary macro features derived from features.parquet columns.
+
+    btc_ret_24h: 24h BTC return via join_asof on deploy timestamps (since many tokens
+    share 5-min Binance bars, the token time series approximates the price series).
+    sol_vol_ratio: short-term / long-term realized vol ratio (vol regime signal).
+    sol_btc_ret_spread: SOL excess return vs BTC at 1h horizon.
+    """
+    macro = feat.select(
+        "token_id", "deploy_time_unix",
+        "btc_close", "sol_vol_1h", "sol_vol_24h", "sol_ret_1h", "btc_ret_1h",
+    ).sort("deploy_time_unix")
+
+    price_series = (
+        macro.select("deploy_time_unix", "btc_close")
+        .unique("deploy_time_unix")
+        .sort("deploy_time_unix")
+        .rename({"deploy_time_unix": "ref_time", "btc_close": "btc_close_24h_ago"})
+    )
+    lookup = macro.with_columns(
+        (pl.col("deploy_time_unix") - 86400).alias("ref_time")
+    ).sort("ref_time")
+
+    joined = lookup.join_asof(price_series, on="ref_time", strategy="nearest")
+
+    return joined.with_columns(
+        ((pl.col("btc_close") - pl.col("btc_close_24h_ago")) / pl.col("btc_close_24h_ago"))
+        .alias("btc_ret_24h"),
+        (pl.col("sol_vol_1h") / (pl.col("sol_vol_24h") + 1e-9)).alias("sol_vol_ratio"),
+        (pl.col("sol_ret_1h") - pl.col("btc_ret_1h")).alias("sol_btc_ret_spread"),
+    ).select("token_id", "btc_ret_24h", "sol_vol_ratio", "sol_btc_ret_spread")
+
+
 def meme_kw_rolling_win_rate(feat: pl.DataFrame, name_feat: pl.DataFrame) -> pl.DataFrame:
     """Rolling hit_2x rate for tokens in same meme-kw category, last 24h.
 
@@ -382,10 +443,12 @@ def main():
     print("[meta] loading features + tokens")
     feat = pl.read_parquet(FEATURES).select(
         "token_id", "deployer_address", "deploy_time_unix", "hit_2x", "hit_5x",
+        "btc_close", "sol_vol_1h", "sol_vol_24h", "sol_ret_1h", "btc_ret_1h",
     )
     tokens = pl.read_parquet(TOKENS).select(
         "token_id", "name", "ticker", "description", "twitter_handle",
         "deployer_wallet_source", "deployer_wallet_source_amount_sol",
+        "image_hash_sha256",
     )
     feat_full = feat.join(
         tokens.select("token_id", "deployer_wallet_source", "twitter_handle"),
@@ -437,10 +500,20 @@ def main():
     handle_reuse = twitter_handle_reuse_features(feat, tokens)
     print(f"       {handle_reuse.shape} in {time.time()-t0:.1f}s")
 
+    t0 = time.time()
+    print("[meta] image hash prior count (leak-free, strictly past)")
+    img_count = image_hash_rolling_count(feat, tokens)
+    print(f"       {img_count.shape} in {time.time()-t0:.1f}s")
+
+    t0 = time.time()
+    print("[meta] macro derived features (btc_ret_24h, sol_vol_ratio, sol_btc_ret_spread)")
+    macro_feat = macro_derived_features(feat)
+    print(f"       {macro_feat.shape} in {time.time()-t0:.1f}s")
+
     print("[meta] joining all features")
     base = feat.select("token_id")
     for df in [ms_dep, ms_fund, ms_handle_roll, handle_static, desc_feat,
-                name_feat, meme_roll, fund_graph, handle_reuse]:
+                name_feat, meme_roll, fund_graph, handle_reuse, img_count, macro_feat]:
         base = base.join(df, on="token_id", how="left")
 
     out_path = OUT / "meta_features.parquet"

@@ -36,18 +36,19 @@ BASE_FEATURES = [
     "deployer_wallet_source_amount_sol",
     "is_cex",
     "deployer_wallet_source_cex_name",
-    "has_image", "has_desc", "has_website", "has_twitter", "has_telegram",
+    "has_image", "has_website", "has_telegram",
     "name_len", "ticker_len", "desc_len",
     "deployer_prior_n", "deployer_prior_grad", "deployer_prior_hit20k",
     "deployer_seconds_since_last",
     "funder_prior_n", "funder_prior_hit20k", "funder_prior_grad",
     "deploys_prev_15m", "deploys_prev_60m", "hit20k_rate_prev_60m",
-    "image_hash_seen_total", "same_ticker_today_prev", "same_name_prev_hour",
-    "mint_suffix_pump", "mint_suffix_PUMP", "deployer_suffix_pump",
+    "same_ticker_today_prev", "same_name_prev_hour",
+    "mint_suffix_pump", "deployer_suffix_pump",
     "name_alpha_chars", "name_upper_chars",
     "utc_sin", "utc_cos", "utc_hour", "utc_dow", "ny_hour", "ldn_hour", "tokyo_hour",
-    "sol_close", "sol_vol_1h", "sol_vol_24h", "sol_ret_1h", "sol_ret_24h",
-    "btc_close", "btc_vol_1h", "btc_ret_1h",
+    # stationary: realized vol (std of 5m log-returns) + percentage returns only
+    "sol_vol_1h", "sol_vol_24h", "sol_ret_1h", "sol_ret_24h",
+    "btc_vol_1h", "btc_ret_1h",
 ]
 
 META_FEATURES = [
@@ -77,6 +78,10 @@ META_FEATURES = [
     "ticker_special_count", "ticker_len_4_5",
     # meme keyword rolling
     "meme_kw_hr_24h",
+    # image (leak-free strictly-past count; 0 = no image or first use of this hash)
+    "image_hash_prior_count",
+    # stationary macro derived (computed in build_meta_features)
+    "btc_ret_24h", "sol_vol_ratio", "sol_btc_ret_spread",
 ]
 
 CAT_COL = "deployer_wallet_source_cex_name"

@@ -35,18 +35,21 @@ DEPLOY_TIME_FEATURES = [
     "deployer_wallet_source_amount_sol",
     "is_cex",
     "deployer_wallet_source_cex_name",  # categorical
-    "has_image", "has_desc", "has_website", "has_twitter", "has_telegram",
+    "has_image", "has_website", "has_telegram",
     "name_len", "ticker_len", "desc_len",
     "deployer_prior_n", "deployer_prior_grad", "deployer_prior_hit20k",
     "deployer_seconds_since_last",
     "funder_prior_n", "funder_prior_hit20k", "funder_prior_grad",
     "deploys_prev_15m", "deploys_prev_60m", "hit20k_rate_prev_60m",
     "image_hash_seen_total", "same_ticker_today_prev", "same_name_prev_hour",
-    "mint_suffix_pump", "mint_suffix_PUMP", "deployer_suffix_pump",
+    "mint_suffix_pump", "deployer_suffix_pump",
     "name_alpha_chars", "name_upper_chars",
     "utc_sin", "utc_cos", "utc_hour", "utc_dow", "ny_hour", "ldn_hour", "tokyo_hour",
-    "sol_close", "sol_vol_1h", "sol_vol_24h", "sol_ret_1h", "sol_ret_24h",
-    "btc_close", "btc_vol_1h", "btc_ret_1h",
+    # stationary: realized vol (std of 5m log-returns) + percentage returns only
+    "sol_vol_1h", "sol_vol_24h", "sol_ret_1h", "sol_ret_24h",
+    "btc_vol_1h", "btc_ret_1h",
+    # derived: vol regime ratio + cross-asset spread (computed in load_dataset)
+    "sol_vol_ratio", "sol_btc_ret_spread",
 ]
 
 POST60_FEATURES = [
@@ -74,6 +77,10 @@ class FoldResult:
 
 def load_dataset(feature_set: list[str], target: str = "hit_2x") -> tuple[pl.DataFrame, list[str]]:
     df = pl.read_parquet(FEAT)
+    df = df.with_columns(
+        (pl.col("sol_vol_1h") / (pl.col("sol_vol_24h") + 1e-9)).alias("sol_vol_ratio"),
+        (pl.col("sol_ret_1h") - pl.col("btc_ret_1h")).alias("sol_btc_ret_spread"),
+    )
     df = df.drop_nulls([target])
     cols = [c for c in feature_set if c in df.columns]
     return df.select(["token_id", "deploy_time_unix", target] + cols), cols
