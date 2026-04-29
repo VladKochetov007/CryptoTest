@@ -695,7 +695,7 @@ def _(df, np, oof, pl, tokens):
     thresh_val = _thresh
     n_buy_total = _n_buy
     n_scored = int(_mask_oof.sum())
-    return n_buy_total, n_scored, scored_df, thresh_val, top1000
+    return n_buy_total, n_scored, thresh_val, top1000
 
 
 @app.cell
@@ -714,15 +714,15 @@ def _(OUT_CSV, mo, n_buy_total, n_scored, thresh_val, top1000):
             mo.stat(label="hit_2x rate in top-1000", value=_hr_str),
         ]),
         mo.md(f"""
-**Top 1000 by OOF score → `{OUT_CSV.name}`**
+    **Top 1000 by OOF score → `{OUT_CSV.name}`**
 
-`buy=1` requires `oof_score ≥ {thresh_val:.4f}` (90th percentile of {n_scored:,} OOF-scored tokens).
-The model selects {n_buy_total:,} / {n_scored:,} = **{n_buy_total/n_scored*100:.1f}%** of the full labeled corpus.
-Population base rate is ~15%; hit rate in the top-1000 is **{_hr_str}**.
+    `buy=1` requires `oof_score ≥ {thresh_val:.4f}` (90th percentile of {n_scored:,} OOF-scored tokens).
+    The model selects {n_buy_total:,} / {n_scored:,} = **{n_buy_total/n_scored*100:.1f}%** of the full labeled corpus.
+    Population base rate is ~15%; hit rate in the top-1000 is **{_hr_str}**.
 
-`oof_score` = unbiased estimate from the fold where each token was held out (not used in training).
-`hit_2x` = observed ground truth, never used as a feature.
-"""),
+    `oof_score` = unbiased estimate from the fold where each token was held out (not used in training).
+    `hit_2x` = observed ground truth, never used as a feature.
+    """),
     ])
     return
 
@@ -735,6 +735,12 @@ def _(mo, top1000):
         mo.md("**Bottom 20 of top-1000 — threshold boundary**"),
         top1000.tail(20),
     ])
+    return
+
+
+@app.cell
+def _():
+    return
 
 
 if __name__ == "__main__":
