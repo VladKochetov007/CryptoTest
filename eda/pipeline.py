@@ -519,7 +519,8 @@ def _(SLOTS, model_ids, pl, random_ids):
         .sort(["token_id", "seconds_since_deploy"])
         .collect()
     )
-    panels = {t: g.sort("seconds_since_deploy") for t, g in _raw.group_by("token_id")}
+    # group_by yields tuple keys even for single column — unpack with [0]
+    panels = {t[0]: g.sort("seconds_since_deploy") for t, g in _raw.group_by("token_id")}
     return (panels,)
 
 
@@ -639,34 +640,40 @@ def _(
     mo.vstack([
         fig_eq,
         mo.md(f"""
-### Backtest summary (trailing_30, 30-min window, net of {(ENTRY_SLIP+EXIT_SLIP)*100:.1f}% roundtrip cost)
+    ### Backtest summary (trailing_30, 30-min window, net of {(ENTRY_SLIP+EXIT_SLIP)*100:.1f}% roundtrip cost)
 
-|  | Model top-10% | Random |
-|--|--|--|
-| n trades | {len(trades_model)} | {len(trades_random)} |
-| win rate | {_fmt(rois_m, lambda a: (a > 0).mean())} | {_fmt(rois_r, lambda a: (a > 0).mean())} |
-| mean ROI | {_fmt(rois_m, np.mean)} | {_fmt(rois_r, np.mean)} |
-| median ROI | {_fmt(rois_m, np.median)} | {_fmt(rois_r, np.median)} |
-| p10 / p90 | {_fmt(rois_m, lambda a: np.quantile(a,.1))} / {_fmt(rois_m, lambda a: np.quantile(a,.9))} | {_fmt(rois_r, lambda a: np.quantile(a,.1))} / {_fmt(rois_r, lambda a: np.quantile(a,.9))} |
-| total PnL (SOL) | {_net_m:.2f} | {_net_r:.2f} |
-| worst trade | {_fmt(rois_m, np.min)} | {_fmt(rois_r, np.min)} |
-"""),
+    |  | Model top-10% | Random |
+    |--|--|--|
+    | n trades | {len(trades_model)} | {len(trades_random)} |
+    | win rate | {_fmt(rois_m, lambda a: (a > 0).mean())} | {_fmt(rois_r, lambda a: (a > 0).mean())} |
+    | mean ROI | {_fmt(rois_m, np.mean)} | {_fmt(rois_r, np.mean)} |
+    | median ROI | {_fmt(rois_m, np.median)} | {_fmt(rois_r, np.median)} |
+    | p10 / p90 | {_fmt(rois_m, lambda a: np.quantile(a,.1))} / {_fmt(rois_m, lambda a: np.quantile(a,.9))} | {_fmt(rois_r, lambda a: np.quantile(a,.1))} / {_fmt(rois_r, lambda a: np.quantile(a,.9))} |
+    | total PnL (SOL) | {_net_m:.2f} | {_net_r:.2f} |
+    | worst trade | {_fmt(rois_m, np.min)} | {_fmt(rois_r, np.min)} |
+    """),
     ])
     return
 
 
 @app.cell
-def _(ROOT, df, np, oof, pl, tokens):
-    # oof_score: unbiased — each token scored only on folds it was NOT trained on.
-    # Tokens in the first training block have no OOF score (walk-forward has no fold 0 val set).
-    # For the ranked submission we use oof_score as the ranking key (honest).
+def _(df, np, oof, pl, tokens):
     _mask_oof = ~np.isnan(oof)
-    _oof_out = pl.DataFrame({
-        "token_id": pl.Series(df["token_id"].to_numpy()[_mask_oof], dtype=pl.Int32),
-        "oof_score": pl.Series(oof[_mask_oof], dtype=pl.Float64),
-    })
+    _scores_valid = oof[_mask_oof]
+    _ids_valid = df["token_id"].to_numpy()[_mask_oof]
 
-    # join metadata: name, ticker so a human can read the output
+    # threshold = 90th percentile → top 10% of OOF-scored tokens get decision=1
+    _thresh = float(np.quantile(_scores_valid, 0.9))
+    _n_buy = int((_scores_valid >= _thresh).sum())
+
+    _oof_out = pl.DataFrame({
+        "token_id": pl.Series(_ids_valid, dtype=pl.Int32),
+        "oof_score": pl.Series(_scores_valid, dtype=pl.Float64),
+    }).with_columns(
+        pl.col("oof_score").rank(descending=True).cast(pl.Int32).alias("rank"),
+        (pl.col("oof_score") >= _thresh).cast(pl.Int8).alias("buy"),
+    )
+
     _meta = tokens.select("token_id", "name", "ticker")
 
     scored_df = (
@@ -675,46 +682,59 @@ def _(ROOT, df, np, oof, pl, tokens):
         .join(_meta, on="token_id", how="left")
     )
 
-    # rank by oof_score; tokens with null oof_score (earliest training block) go to the bottom
+    # top 1000 buy tokens for submission
     top1000 = (
         scored_df
-        .filter(pl.col("oof_score").is_not_null())
+        .filter(pl.col("buy") == 1)
         .sort("oof_score", descending=True)
         .head(1000)
-        .with_columns(pl.lit("buy").alias("decision"))
-        .select("token_id", "name", "ticker", "deploy_time_unix",
-                "oof_score", "hit_2x", "decision")
+        .select("rank", "token_id", "name", "ticker", "deploy_time_unix",
+                "oof_score", "hit_2x", "buy")
     )
-    return scored_df, top1000
+
+    thresh_val = _thresh
+    n_buy_total = _n_buy
+    n_scored = int(_mask_oof.sum())
+    return n_buy_total, n_scored, scored_df, thresh_val, top1000
 
 
 @app.cell
-def _(OUT_CSV, mo, top1000):
+def _(OUT_CSV, mo, n_buy_total, n_scored, thresh_val, top1000):
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     top1000.write_csv(OUT_CSV)
-    mo.md(f"""
-### Scored submission
 
-Top 1000 tokens written to `{OUT_CSV}`, ranked by `oof_score`.
+    _hit_rate_buy = top1000["hit_2x"].mean() if top1000["hit_2x"].null_count() < top1000.height else None
+    _hr_str = f"{_hit_rate_buy:.3f}" if _hit_rate_buy is not None else "n/a"
 
-**`oof_score`** — model probability from the fold where this token was *validation*, not training.
-This is the unbiased estimate. All 84 features are strictly pre-deploy (no post-deploy columns used).
+    mo.vstack([
+        mo.hstack([
+            mo.stat(label="scored tokens", value=f"{n_scored:,}"),
+            mo.stat(label="buy decisions (p90 threshold)", value=f"{n_buy_total:,}"),
+            mo.stat(label="threshold score", value=f"{thresh_val:.4f}"),
+            mo.stat(label="hit_2x rate in top-1000", value=_hr_str),
+        ]),
+        mo.md(f"""
+**Top 1000 by OOF score → `{OUT_CSV.name}`**
 
-**`hit_2x`** — observed ground-truth label (did this token actually double?). Included for evaluation only,
-never used as a model feature.
+`buy=1` requires `oof_score ≥ {thresh_val:.4f}` (90th percentile of {n_scored:,} OOF-scored tokens).
+The model selects {n_buy_total:,} / {n_scored:,} = **{n_buy_total/n_scored*100:.1f}%** of the full labeled corpus.
+Population base rate is ~15%; hit rate in the top-1000 is **{_hr_str}**.
 
-**`decision`** — "buy" for all 1000 rows (top-decile by model score).
-""")
+`oof_score` = unbiased estimate from the fold where each token was held out (not used in training).
+`hit_2x` = observed ground truth, never used as a feature.
+"""),
+    ])
     return
 
 
 @app.cell
 def _(mo, top1000):
     mo.vstack([
-        mo.md("**Top 20 by OOF score**"),
+        mo.md("**Top 20 — highest model confidence**"),
         top1000.head(20),
+        mo.md("**Bottom 20 of top-1000 — threshold boundary**"),
+        top1000.tail(20),
     ])
-    return
 
 
 if __name__ == "__main__":
