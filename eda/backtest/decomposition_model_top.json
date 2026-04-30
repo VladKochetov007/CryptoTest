@@ -1,0 +1,68 @@
+[
+  {
+    "strategy": "deployer_sell_exit",
+    "n_trades": 4993,
+    "mean_gross_roi": 4.117519675115009,
+    "mean_net_roi": 2.9660969339508343,
+    "mean_fee_drag": 0.020000000000000014,
+    "mean_slip_drag": 1.1314227411641737,
+    "median_alpha_capture": -0.6656440910777904,
+    "win_rate": 0.31403965551772484,
+    "scored_fraction": 1.0
+  },
+  {
+    "strategy": "sell_pressure_5",
+    "n_trades": 4993,
+    "mean_gross_roi": 4.129917781655042,
+    "mean_net_roi": 2.978409784584199,
+    "mean_fee_drag": 0.020000000000000014,
+    "mean_slip_drag": 1.1315079970708406,
+    "median_alpha_capture": -0.7284705915034184,
+    "win_rate": 0.3729220909272982,
+    "scored_fraction": 1.0
+  },
+  {
+    "strategy": "tp_2x_only",
+    "n_trades": 4993,
+    "mean_gross_roi": 4.104501173371792,
+    "mean_net_roi": 2.953437130570303,
+    "mean_fee_drag": 0.020000000000000007,
+    "mean_slip_drag": 1.1310640428014895,
+    "median_alpha_capture": -0.9029303046331141,
+    "win_rate": 0.3573002203084318,
+    "scored_fraction": 1.0
+  },
+  {
+    "strategy": "tp_2x_sl_50",
+    "n_trades": 4993,
+    "mean_gross_roi": 4.109519211230356,
+    "mean_net_roi": 2.958464640189723,
+    "mean_fee_drag": 0.020000000000000004,
+    "mean_slip_drag": 1.131054571040631,
+    "median_alpha_capture": -0.9324102347071072,
+    "win_rate": 0.3280592829961947,
+    "scored_fraction": 1.0
+  },
+  {
+    "strategy": "trailing_30",
+    "n_trades": 4993,
+    "mean_gross_roi": 0.11557068797955881,
+    "mean_net_roi": 0.08635325867488579,
+    "mean_fee_drag": 0.020000000000000004,
+    "mean_slip_drag": 0.009217429304673095,
+    "median_alpha_capture": -0.31151737576937527,
+    "win_rate": 0.4149809733627078,
+    "scored_fraction": 1.0
+  },
+  {
+    "strategy": "vol_stagnation_10",
+    "n_trades": 4993,
+    "mean_gross_roi": 4.122901148391062,
+    "mean_net_roi": 2.971550295688088,
+    "mean_fee_drag": 0.020000000000000007,
+    "mean_slip_drag": 1.131350852702972,
+    "median_alpha_capture": -0.7737565711073506,
+    "win_rate": 0.365111155617865,
+    "scored_fraction": 1.0
+  }
+]

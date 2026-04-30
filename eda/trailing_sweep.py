@@ -26,12 +26,12 @@ import polars as pl
 try:
     from eda.backtest import (
         _run_trailing, simulate, load_token_panel, load_deployer_first_sell,
-        _load_scores_and_actuals, TradeResult,
+        _load_scores_and_actuals, TradeResult, POSITION_SOL,
     )
 except ModuleNotFoundError:
     from backtest import (
         _run_trailing, simulate, load_token_panel, load_deployer_first_sell,
-        _load_scores_and_actuals, TradeResult,
+        _load_scores_and_actuals, TradeResult, POSITION_SOL,
     )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,9 +49,12 @@ POSITION_SIZES = [0.05, 0.10, 0.20, 0.50]
 
 def cell_metrics(results: list[TradeResult]) -> dict:
     rois = np.clip(np.array([r.net_roi for r in results]), -1.0, 5.0)
+    if len(rois) == 0:
+        return {"n": 0, "total_pnl_sol": 0.0, "mean_roi": float("nan"),
+                "median_roi": float("nan"), "win_rate": float("nan")}
     return {
         "n": len(results),
-        "total_pnl_sol": float(rois.sum()),
+        "total_pnl_sol": float(rois.sum() * POSITION_SOL),
         "mean_roi": float(rois.mean()),
         "median_roi": float(np.median(rois)),
         "win_rate": float((rois > 0).mean()),
