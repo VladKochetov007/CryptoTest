@@ -24,9 +24,7 @@ def _():
     SLOTS = ROOT / "slot_features_60m.parquet"
     OUT_CSV = ROOT / "eda" / "scoring" / "scored_submission.csv"
     TRADE_LOG_CSV = ROOT / "eda" / "scoring" / "trade_log.csv"
-
     return (
-        Counter,
         OUT_CSV,
         ROOT,
         SLOTS,
@@ -39,7 +37,6 @@ def _():
         plt,
         roc_auc_score,
         time,
-        json,
     )
 
 
@@ -58,12 +55,21 @@ def _():
     # v_sol_init = 30 SOL, v_token_init = 1.073e9 tokens (human units)
     K_INVARIANT = 30.0 * 1.073e9
     TAKER_FEE = 0.01
-
-    return ARM_MULT, CAT_COL, K_INVARIANT, LABEL_HORIZON_SEC, LATENCY_SEC, POSITION_SOL, SL_FRAC, TAKER_FEE, TRAIL_FRAC
+    return (
+        ARM_MULT,
+        CAT_COL,
+        K_INVARIANT,
+        LABEL_HORIZON_SEC,
+        LATENCY_SEC,
+        POSITION_SOL,
+        SL_FRAC,
+        TAKER_FEE,
+        TRAIL_FRAC,
+    )
 
 
 @app.cell
-def _(K_INVARIANT, TAKER_FEE, np):
+def _(K_INVARIANT, TAKER_FEE):
     # --- inlined AMM math (from eda/amm.py) ---
     def _reserves(price):
         v_sol = (K_INVARIANT * price) ** 0.5
@@ -101,8 +107,7 @@ def _(K_INVARIANT, TAKER_FEE, np):
     _tok, _ = amm_buy_tokens(2.8e-8, 0.1)
     _sol_out = amm_sell_sol(2 * 2.8e-8, _tok)
     assert abs(_sol_out / 0.1 - 2.0) < 0.1, f"AMM sanity failed: net={_sol_out/0.1:.3f}"
-
-    return amm_buy_tokens, amm_sell_sol, round_trip_net_roi
+    return amm_buy_tokens, amm_sell_sol
 
 
 @app.cell
@@ -345,8 +350,11 @@ def _(LABEL_HORIZON_SEC, defaultdict, np, pl):
             times = np.array(row["times"], dtype=np.int64)
             tids = np.array(row["tids"], dtype=np.int32)
             order = np.argsort(times, kind="stable")
-            for rank, tid in enumerate(tids[order]):
-                prior_counts[int(tid)] = rank
+            times_s = times[order]
+            tids_s = tids[order]
+            # use searchsorted so same-timestamp tokens all see the same prior count
+            for i, tid in enumerate(tids_s):
+                prior_counts[int(tid)] = int(np.searchsorted(times_s, times_s[i], side="left"))
         return pl.DataFrame({
             "token_id": all_tids,
             "image_hash_prior_count": pl.Series(
@@ -366,7 +374,7 @@ def _(LABEL_HORIZON_SEC, defaultdict, np, pl):
         lookup = macro.with_columns(
             (pl.col("deploy_time_unix") - 86400).alias("ref_time")
         ).sort("ref_time")
-        joined = lookup.join_asof(price_series, on="ref_time", strategy="nearest")
+        joined = lookup.join_asof(price_series, on="ref_time", strategy="backward")
         return joined.with_columns(
             ((pl.col("btc_close") - pl.col("btc_close_24h_ago")) / pl.col("btc_close_24h_ago"))
             .alias("btc_ret_24h"),
@@ -416,9 +424,6 @@ def _(LABEL_HORIZON_SEC, defaultdict, np, pl):
         return pl.concat(results).sort("token_id")
 
     return (
-        CELEB_HANDLES,
-        MEME_KW,
-        TEMPLATE_PHRASES,
         compute_rolling_group_features,
         description_features,
         funder_graph_features,
@@ -486,7 +491,7 @@ def _(ROOT, pl, time):
         on="token_id", how="left",
     )
     _load_sec = time.time() - _t0
-    return feat, feat_full, feat_raw, tokens, _load_sec
+    return feat, feat_full, feat_raw, tokens
 
 
 @app.cell
@@ -538,7 +543,7 @@ def _(
 
 
 @app.cell
-def _(feat_raw, meta_elapsed, meta_features_df, mo, pl):
+def _(feat_raw, meta_elapsed, meta_features_df, mo):
     _feat_base = feat_raw.drop_nulls("hit_2x").sort("deploy_time_unix")
     df = _feat_base.join(meta_features_df, on="token_id", how="left")
     mo.md(f"**Data ready** — {df.height:,} labeled tokens, meta features computed in {meta_elapsed:.1f}s")
@@ -598,7 +603,6 @@ def _():
 
     assert not (_FORBIDDEN & set(BASE_FEATURES)), f"forbidden in BASE: {_FORBIDDEN & set(BASE_FEATURES)}"
     assert not (_FORBIDDEN & set(META_FEATURES)), f"forbidden in META: {_FORBIDDEN & set(META_FEATURES)}"
-
     return BASE_FEATURES, META_FEATURES
 
 
@@ -666,7 +670,7 @@ def _(df, fold_aucs, mo, np, oof, pl, roc_auc_score):
         mo.stat(label="base_rate", value=f"{df['hit_2x'].mean():.3f}"),
         mo.vstack([mo.md("**Fold AUCs**"), _fold_tbl]),
     ])
-    return (oof_auc,)
+    return
 
 
 @app.cell
@@ -684,7 +688,7 @@ def _(booster, model_cols, np, plt):
     _ax.set_title("Top 30 features — LightGBM gain")
     plt.tight_layout()
     fig_imp
-    return (fig_imp,)
+    return
 
 
 @app.cell
@@ -705,7 +709,6 @@ def _(df, np, oof):
     random_ids = rng.choice(_valid_ids, size=len(model_ids), replace=False).tolist()
 
     hit2x_lookup = dict(zip(df["token_id"].to_list(), df["hit_2x"].to_list()))
-
     return hit2x_lookup, model_ids, model_oof_scores, random_ids
 
 
@@ -837,21 +840,11 @@ def _(
     trades_random = run_backtest(random_ids, "random", _dummy_oof)
 
     trade_log = pl.DataFrame(trades_model + trades_random)
-
     return trade_log, trades_model, trades_random
 
 
 @app.cell
-def _(
-    POSITION_SOL,
-    mo,
-    np,
-    pl,
-    plt,
-    trade_log,
-    trades_model,
-    trades_random,
-):
+def _(POSITION_SOL, mo, np, pl, plt, trade_log, trades_model, trades_random):
     def _stats(rows, label):
         if not rows:
             return {"universe": label, "n": 0}
@@ -926,7 +919,7 @@ def _(
 
     _tbl = pl.DataFrame([_stats(trades_model, "model_top10pct"), _stats(trades_random, "random")])
     mo.vstack([fig_diag, _tbl])
-    return (fig_diag,)
+    return
 
 
 @app.cell
@@ -938,7 +931,7 @@ def _(TRADE_LOG_CSV, mo, trade_log):
 
 
 @app.cell
-def _(df, mo, np, oof, pl, tokens):
+def _(df, np, oof, pl, tokens):
     _mask_oof = ~np.isnan(oof)
     _scores_valid = oof[_mask_oof]
     _ids_valid = df["token_id"].to_numpy()[_mask_oof]
@@ -966,7 +959,7 @@ def _(df, mo, np, oof, pl, tokens):
     thresh_val = _thresh
     n_buy_total = _n_buy
     n_scored = int(_mask_oof.sum())
-    return n_buy_total, n_scored, scored_df, thresh_val, top1000
+    return n_buy_total, n_scored, thresh_val, top1000
 
 
 @app.cell
@@ -990,6 +983,11 @@ def _(mo, top1000):
         mo.md("**Top 20**"),
         top1000.head(20),
     ])
+    return
+
+
+@app.cell
+def _():
     return
 
 
