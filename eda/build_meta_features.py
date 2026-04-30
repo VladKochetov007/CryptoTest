@@ -38,6 +38,8 @@ TEMPLATE_PHRASES = [
     "rugproof", "rug proof", "fair launch", "no rug", "based team",
 ]
 
+LABEL_HORIZON_SEC = 1800
+
 
 def compute_rolling_group_features(
     feat: pl.DataFrame,
@@ -77,16 +79,16 @@ def compute_rolling_group_features(
         hits = hits[order]
         tids = tids[order]
 
-        # cum_full[k] = sum(hits[0..k-1]); length N+1 so cum_full[hi] is always valid.
-        # hi[i] = first index where times[j] >= times[i] — strictly excludes self AND
-        # all same-second peers (preventing tie-time label leakage in this group).
+        # hi_resolved[i] = first j where times[j] >= times[i] - LABEL_HORIZON_SEC.
+        # Peers at indices [lo, hi_resolved) have t_peer < t - 1800s, guaranteeing
+        # their hit_2x label window closed before current token's deploy time.
         cum_full = np.concatenate([[0], np.cumsum(hits)])
-        hi = np.searchsorted(times, times, side="left")
+        hi_resolved = np.searchsorted(times, times - LABEL_HORIZON_SEC, side="left")
 
         for wi, (w_name, w) in enumerate(zip(w_names, w_secs)):
             lo = np.searchsorted(times, times - w, side="left")
-            prior_n = hi - lo
-            prior_hits_arr = cum_full[hi] - cum_full[lo]
+            prior_n = np.maximum(hi_resolved - lo, 0)
+            prior_hits_arr = np.maximum(cum_full[hi_resolved] - cum_full[lo], 0)
             hit_rate = np.where(prior_n > 0, prior_hits_arr / np.maximum(prior_n, 1), np.nan)
             for i, tid in enumerate(tids):
                 records_n[wi][int(tid)] = int(prior_n[i])
@@ -416,8 +418,8 @@ def meme_kw_rolling_win_rate(feat: pl.DataFrame, name_feat: pl.DataFrame) -> pl.
                 pl.col("hits").rolling_sum(window_size=96, min_periods=1).alias("hits_96"),
             )
             .with_columns(
-                pl.col("n_96").shift(1).alias("n_prev"),
-                pl.col("hits_96").shift(1).alias("hits_prev"),
+                pl.col("n_96").shift(3).alias("n_prev"),
+                pl.col("hits_96").shift(3).alias("hits_prev"),
             )
             .with_columns(
                 (pl.col("hits_prev") / pl.col("n_prev").clip(lower_bound=1))

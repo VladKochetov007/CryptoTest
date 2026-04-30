@@ -40,12 +40,15 @@ def _():
         meme_kw_rolling_win_rate,
     )
     from meta_train import prep, walkforward_splits
+    from amm import buy_fill as amm_buy_fill, sell_fill as amm_sell_fill
 
     return (
         Counter,
         OUT_CSV,
         ROOT,
         SLOTS,
+        amm_buy_fill,
+        amm_sell_fill,
         compute_rolling_group_features,
         dataclass,
         description_features,
@@ -73,12 +76,20 @@ def _(mo):
     mo.md("""
     # Pump.fun pre-buy scoring pipeline
 
-    End-to-end notebook: raw parquet files → meta feature engineering → LightGBM → backtest → ranked submission CSV.
+    End-to-end: raw parquets → leak-free meta features → LightGBM → realistic backtest → ranked CSV.
 
-    **Label**: `hit_2x` — token reached 2× its launch market-cap within the first hour.
-    **Base rate**: ~15% across the dataset.
-    **Model**: `meta__lgbm` — 84 features (41 base + 43 meta), 5-fold expanding walk-forward with 1h embargo.
-    **OOF AUC**: 0.7977 (vs instant baseline 0.7653, +324 bps).
+    **Label**: `hit_2x` — token reached 2× its launch price within 30 minutes.
+    **Base rate**: ~15%. **Model**: `meta__lgbm`, 5-fold expanding walk-forward, 1h embargo.
+
+    **Leakage fixes**:
+    - Rolling hit-rate features count only peers whose 30-min label window already closed (`t_peer + 1800s < t`). Removes ~17% of previously-counted 24h-window peers.
+    - ATH-based features (`deployer_prior_grad`, `deployer_prior_hit20k`, `funder_prior_*`, `hit20k_rate_prev_60m`) dropped — ATH resolves over unbounded future horizon.
+    - Meme-keyword win-rate shifted by 3 buckets (45 min) to ensure label resolution.
+
+    **Execution model**:
+    - Entry at first slot with `seconds_since_deploy ≥ 1s` (200-300 ms bot latency floor).
+    - All fills via pump.fun bonding-curve AMM (`k = v_sol × v_token`, 1% fee per side).
+    - Position size: 0.1 SOL per trade.
     """)
     return
 
@@ -171,10 +182,9 @@ def _():
         "deployer_wallet_source_cex_name",
         "has_image", "has_website", "has_telegram",
         "name_len", "ticker_len", "desc_len",
-        "deployer_prior_n", "deployer_prior_grad", "deployer_prior_hit20k",
-        "deployer_seconds_since_last",
-        "funder_prior_n", "funder_prior_hit20k", "funder_prior_grad",
-        "deploys_prev_15m", "deploys_prev_60m", "hit20k_rate_prev_60m",
+        "deployer_prior_n", "deployer_seconds_since_last",
+        "funder_prior_n",
+        "deploys_prev_15m", "deploys_prev_60m",
         "same_ticker_today_prev", "same_name_prev_hour",
         "mint_suffix_pump", "deployer_suffix_pump",
         "name_alpha_chars", "name_upper_chars",
@@ -243,17 +253,13 @@ def _(mo):
     | Feature | SHAP rank | Direction | Description |
     |---|---|---|---|
     | `deployer_prior_n` | 18 | + | Total prior token count for this deployer (all-time). |
-    | `deployer_prior_grad` | — | + | Prior graduation count for this deployer. Graduation = market-cap ≥ $69k. |
-    | `deployer_prior_hit20k` | 14 | + | Prior count where market-cap exceeded $20k. Leading indicator of quality. |
-    | `deployer_seconds_since_last` | 2 | — | Seconds since this deployer's previous token. Short gaps = serial spammer; very long gaps = infrequent = often quality. #2 by SHAP (0.381). |
+    | `deployer_seconds_since_last` | 2 | — | Seconds since this deployer's previous token. Short gaps = serial spammer; very long gaps = often quality. #2 by SHAP (0.381). |
 
     ### Funder history (BASE — instant window)
 
     | Feature | SHAP rank | Direction | Description |
     |---|---|---|---|
     | `funder_prior_n` | 16 | + | Prior token count funded by this wallet. |
-    | `funder_prior_hit20k` | — | + | Prior count hitting $20k for this funder. |
-    | `funder_prior_grad` | — | + | Prior graduation count for this funder. |
 
     ### Market activity at deploy time (BASE)
 
@@ -261,7 +267,6 @@ def _(mo):
     |---|---|---|---|
     | `deploys_prev_15m` | — | — | Platform-wide deploy count in last 15 minutes. High = crowded market. |
     | `deploys_prev_60m` | — | — | Platform-wide deploy count in last 60 minutes. |
-    | `hit20k_rate_prev_60m` | — | + | Platform-wide hit_20k rate over last 60 minutes. Regime indicator. |
     | `same_ticker_today_prev` | — | — | Prior tokens today with the same ticker. Clone signal. |
     | `same_name_prev_hour` | — | — | Prior tokens in the last hour with the same name. |
 
@@ -476,22 +481,22 @@ def _(mo):
     mo.md("""
     ## Transaction cost model
 
-    Pump.fun uses a **virtual constant-product bonding curve** (`k = v_sol × v_token`).
+    Pump.fun uses a **virtual bonding curve** — mathematically a constant-product invariant `k = v_sol × v_token` (v_sol=30 SOL, v_token=1.073B tokens at genesis), not a classic AMM pool. Price is deterministic given cumulative buys.
 
-    - **1% fee** on every buy (deducted from SOL input before the curve) and every sell (deducted from SOL output after the curve).
-    - **AMM price impact** for a 0.1 SOL probe at genesis reserves (v_sol=30, v_token=1.073B) ≈ 0.17%; for a 1 SOL full position ≈ 1.7%.
-    - **Roundtrip cost model**: `ENTRY_SLIP = 0.013` (1% fee + ~0.3% AMM impact), `EXIT_SLIP = 0.013`.
-    - All ROI numbers below are **gross** (no costs applied in the backtest sim); net ROI = gross ROI − 2.6% roundtrip.
-    - The AMM two-stage simulation (`eda/two_stage_sim.py`) with `fill_mode="amm"` shows net PnL turns negative on an unfiltered 20k-token universe — confirming that model selection is load-bearing.
+    - **1% fee** on every buy (deducted from SOL input before curve) and every sell (deducted from SOL output).
+    - **Curve price impact** for 0.1 SOL at genesis ≈ 0.3%; for 1 SOL ≈ 3%.
+    - Backtest: `buy_fill(entry_price, 0.1 SOL)` → tokens received; `sell_fill(exit_price, tokens)` → SOL out.
+    - Entry = first slot with `seconds_since_deploy ≥ 1s`. Slot 0 is the deployer's `create_and_buy` — physically inaccessible to any external bot.
+    - After ~85 SOL real reserves, the token graduates to PumpSwap (a real AMM pool). Backtest window is 30 min so graduation is rare in our universe.
     """)
     return
 
 
 @app.cell
 def _():
-    ENTRY_SLIP = 0.013
-    EXIT_SLIP = 0.013
-    return ENTRY_SLIP, EXIT_SLIP
+    LATENCY_SEC = 1
+    POSITION_SOL = 0.1
+    return LATENCY_SEC, POSITION_SOL
 
 
 @app.cell
@@ -525,7 +530,7 @@ def _(SLOTS, model_ids, pl, random_ids):
 
 
 @app.cell
-def _(ENTRY_SLIP, EXIT_SLIP, dataclass, model_ids, np, panels, pl, random_ids):
+def _(LATENCY_SEC, POSITION_SOL, amm_buy_fill, amm_sell_fill, dataclass, model_ids, np, panels, pl, random_ids):
     @dataclass
     class Trade:
         token_id: int
@@ -533,24 +538,33 @@ def _(ENTRY_SLIP, EXIT_SLIP, dataclass, model_ids, np, panels, pl, random_ids):
         exit_sec: int
         reason: str
 
-    def sim_trailing(tid, secs, prices, entry_slip, exit_slip):
-        entry = prices[0] * (1 + entry_slip)
-        cum_max = prices[0]
+    def sim_trailing(tid, secs, prices, position_sol, latency_sec):
+        # skip slot 0 (deployer's own devbuy — inaccessible); use first slot >= latency_sec
+        idx0 = int(np.searchsorted(secs, latency_sec, side="left"))
+        if idx0 >= len(prices):
+            return None
+        entry_price = prices[idx0]
+        entry_fill = amm_buy_fill(entry_price, position_sol)
+        if entry_fill.tokens <= 0:
+            return None
+        tokens_held = entry_fill.tokens
+        cum_max = entry_price
         armed = False
-        for i in range(1, len(prices)):
-            cum_max = max(cum_max, prices[i])
-            if not armed and prices[i] >= 1.5 * prices[0]:
+        for i in range(idx0 + 1, len(prices)):
+            p = prices[i]
+            cum_max = max(cum_max, p)
+            if not armed and p >= 1.5 * entry_price:
                 armed = True
-            if armed and prices[i] <= 0.7 * cum_max:
-                fill = prices[i] * (1 - exit_slip)
-                return Trade(tid, fill / entry - 1, int(secs[i]), "trail")
-            if prices[i] <= 0.4 * prices[0]:
-                fill = prices[i] * (1 - exit_slip)
-                return Trade(tid, fill / entry - 1, int(secs[i]), "sl_hard")
-        fill = prices[-1] * (1 - exit_slip)
-        return Trade(tid, fill / entry - 1, int(secs[-1]), "timeout")
+            if armed and p <= 0.7 * cum_max:
+                sol_out = amm_sell_fill(p, tokens_held).tokens
+                return Trade(tid, sol_out / position_sol - 1, int(secs[i]), "trail")
+            if p <= 0.4 * entry_price:
+                sol_out = amm_sell_fill(p, tokens_held).tokens
+                return Trade(tid, sol_out / position_sol - 1, int(secs[i]), "sl_hard")
+        sol_out = amm_sell_fill(prices[-1], tokens_held).tokens
+        return Trade(tid, sol_out / position_sol - 1, int(secs[-1]), "timeout")
 
-    def run_backtest(ids, panels, entry_slip, exit_slip):
+    def run_backtest(ids, panels, position_sol, latency_sec):
         trades = []
         for tid in ids:
             panel = panels.get(tid)
@@ -559,16 +573,18 @@ def _(ENTRY_SLIP, EXIT_SLIP, dataclass, model_ids, np, panels, pl, random_ids):
             sub = panel.filter(pl.col("seconds_since_deploy") <= 1800)
             if sub.height == 0:
                 continue
-            trades.append(sim_trailing(
+            t = sim_trailing(
                 tid,
                 sub["seconds_since_deploy"].to_numpy(),
                 sub["price_sol_per_token"].to_numpy(),
-                entry_slip, exit_slip,
-            ))
+                position_sol, latency_sec,
+            )
+            if t is not None:
+                trades.append(t)
         return trades
 
-    trades_model = run_backtest(model_ids, panels, ENTRY_SLIP, EXIT_SLIP)
-    trades_random = run_backtest(random_ids, panels, ENTRY_SLIP, EXIT_SLIP)
+    trades_model = run_backtest(model_ids, panels, POSITION_SOL, LATENCY_SEC)
+    trades_random = run_backtest(random_ids, panels, POSITION_SOL, LATENCY_SEC)
 
     rois_m = np.array([t.roi for t in trades_model])
     rois_r = np.array([t.roi for t in trades_random])
@@ -578,8 +594,8 @@ def _(ENTRY_SLIP, EXIT_SLIP, dataclass, model_ids, np, panels, pl, random_ids):
 @app.cell
 def _(
     Counter,
-    ENTRY_SLIP,
-    EXIT_SLIP,
+    LATENCY_SEC,
+    POSITION_SOL,
     mo,
     np,
     plt,
@@ -605,14 +621,14 @@ def _(
     ax1.set_yscale("log")
     ax1.set_xlabel("trade # (sorted by exit time)")
     ax1.set_ylabel("cumulative wealth (SOL per SOL, log scale)")
-    ax1.set_title("Backtest equity — trailing_30 with pump.fun costs")
+    ax1.set_title("Backtest equity — trailing_30, bonding-curve fills")
     ax1.legend()
 
     _cost_txt = (
-        f"Cost model\n"
-        f"  entry slip: {ENTRY_SLIP*100:.1f}%\n"
-        f"  exit slip:  {EXIT_SLIP*100:.1f}%\n"
-        f"  (1% pump fee + ~0.3% AMM impact)"
+        f"Bonding curve fills\n"
+        f"  position: {POSITION_SOL} SOL\n"
+        f"  entry: slot >= {LATENCY_SEC}s\n"
+        f"  1% fee per side + curve impact"
     )
     ax1.text(0.02, 0.03, _cost_txt, transform=ax1.transAxes,
              fontsize=8, va="bottom", family="monospace",
@@ -640,7 +656,7 @@ def _(
     mo.vstack([
         fig_eq,
         mo.md(f"""
-    ### Backtest summary (trailing_30, 30-min window, net of {(ENTRY_SLIP+EXIT_SLIP)*100:.1f}% roundtrip cost)
+    ### Backtest summary (trailing_30, 30-min window, bonding-curve fills, {POSITION_SOL} SOL position)
 
     |  | Model top-10% | Random |
     |--|--|--|
