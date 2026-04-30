@@ -1,4 +1,4 @@
-"""Train LGBM on base + meta features. Compare AUC vs baseline (0.7653).
+"""Train LGBM on base + meta features. Compare AUC vs current instant baseline.
 
 Requires eda/meta_features.parquet (from build_meta_features.py).
 
@@ -38,10 +38,10 @@ BASE_FEATURES = [
     "deployer_wallet_source_cex_name",
     "has_image", "has_website", "has_telegram",
     "name_len", "ticker_len", "desc_len",
-    "deployer_prior_n", "deployer_prior_grad", "deployer_prior_hit20k",
+    "deployer_prior_n",
     "deployer_seconds_since_last",
-    "funder_prior_n", "funder_prior_hit20k", "funder_prior_grad",
-    "deploys_prev_15m", "deploys_prev_60m", "hit20k_rate_prev_60m",
+    "funder_prior_n",
+    "deploys_prev_15m", "deploys_prev_60m",
     "same_ticker_today_prev", "same_name_prev_hour",
     "mint_suffix_pump", "deployer_suffix_pump",
     "name_alpha_chars", "name_upper_chars",
@@ -86,6 +86,18 @@ META_FEATURES = [
 
 CAT_COL = "deployer_wallet_source_cex_name"
 
+BASELINE_SUMMARY = ROOT / "eda" / "artifacts" / "instant__lgbm" / "summary.json"
+
+
+def read_baseline_auc() -> float | None:
+    if not BASELINE_SUMMARY.exists():
+        return None
+    try:
+        data = json.loads(BASELINE_SUMMARY.read_text())
+        return float(data.get("auc_mean"))
+    except Exception:
+        return None
+
 
 def walkforward_splits(
     times: np.ndarray,
@@ -125,6 +137,7 @@ def prep(df: pl.DataFrame, cols: list[str], target: str):
 
 
 def main():
+    baseline_auc = read_baseline_auc()
     print("[meta_train] loading features")
     base = pl.read_parquet(FEAT).drop_nulls(["hit_2x"]).sort("deploy_time_unix")
     meta = pl.read_parquet(META)
@@ -176,7 +189,8 @@ def main():
 
     mask = ~np.isnan(oof)
     oof_auc = float(roc_auc_score(df["hit_2x"].to_numpy()[mask].astype(int), oof[mask]))
-    print(f"\n  OOF AUC: {oof_auc:.4f}  (baseline instant/lgbm: 0.7653)")
+    base_str = f"{baseline_auc:.4f}" if baseline_auc is not None else "n/a"
+    print(f"\n  OOF AUC: {oof_auc:.4f}  (baseline instant/lgbm: {base_str})")
 
     # SHAP on last fold model
     print("[meta_train] computing SHAP on last-fold model (20k sample)")
@@ -226,8 +240,8 @@ def main():
         "n_features_meta": len(META_FEATURES),
         "n_features_used": len(cols),
         "oof_auc": oof_auc,
-        "baseline_oof_auc": 0.7653,
-        "delta_auc": oof_auc - 0.7653,
+        "baseline_oof_auc": baseline_auc,
+        "delta_auc": (oof_auc - baseline_auc) if baseline_auc is not None else None,
         "fold_aucs": fold_aucs,
         "features": cols,
     }

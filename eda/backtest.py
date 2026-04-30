@@ -1,8 +1,8 @@
-"""Part 2 — exit-strategy simulator.
+"""Part 2 — exit-strategy simulator (honest execution).
 
 Reads slot_features_60m and deployer_actions_60m, replays per-token tick streams,
-and applies a set of exit rules to a buy executed at first-slot price. Reports per
-strategy mean/median ROI, max drawdown, hold time, hit ratio.
+and applies exit rules to a buy executed after fixed latency (skip devbuy slot0).
+ROI computed via Pump.fun bonding-curve constant-product impact model + 1% fee/side.
 
 Selection of "buys" mimics a real bot: top-decile predictions from the LGBM model
 trained in `train.py` (instant feature set). Falls back to all tokens if model
@@ -18,6 +18,12 @@ from typing import Callable
 import numpy as np
 import polars as pl
 
+try:
+    from eda.amm import round_trip_pnl
+except ModuleNotFoundError:
+    # supports `python eda/backtest.py ...` where sys.path points at eda/
+    from amm import round_trip_pnl
+
 ROOT = Path(__file__).resolve().parents[1]
 FEAT = ROOT / "eda" / "features.parquet"
 ART = ROOT / "eda" / "artifacts"
@@ -26,6 +32,15 @@ ACTS = ROOT / "deployer_actions_60m.parquet"
 OUT = ROOT / "eda" / "backtest"
 OUT.mkdir(exist_ok=True)
 
+LATENCY_SEC = 1
+POSITION_SOL = 0.1
+
+
+def roi_from_prices(entry_price: float, exit_price: float) -> float:
+    """Round-trip ROI in SOL units for fixed POSITION_SOL size."""
+    _, pnl, _ = round_trip_pnl(entry_price, exit_price, POSITION_SOL)
+    return pnl / POSITION_SOL
+
 
 @dataclass
 class TradeResult:
@@ -33,14 +48,11 @@ class TradeResult:
     entry_price: float
     exit_price: float
     exit_sec: int
+    roi: float
     max_drawdown: float
     max_runup: float
     holding_sec: int
     reason: str
-
-    @property
-    def roi(self) -> float:
-        return self.exit_price / self.entry_price - 1
 
 
 def load_token_panel(token_ids: list[int]) -> dict[int, pl.DataFrame]:
@@ -56,7 +68,8 @@ def load_token_panel(token_ids: list[int]) -> dict[int, pl.DataFrame]:
         "volume_sol", "buy_volume_sol", "sell_volume_sol",
         "top_wallet_bought", "holders_count",
     ).sort(["token_id", "seconds_since_deploy"]).collect()
-    return {t: g.sort("seconds_since_deploy") for t, g in df.group_by("token_id")}
+    # polars group_by yields tuple keys; unwrap
+    return {t[0]: g.sort("seconds_since_deploy") for t, g in df.group_by("token_id")}
 
 
 def load_deployer_first_sell(token_ids: list[int]) -> dict[int, int]:
@@ -80,13 +93,18 @@ def simulate(strategy_fn: Callable, panels: dict[int, pl.DataFrame],
         panel = panel.filter(pl.col("seconds_since_deploy") <= max_sec)
         if panel.height == 0:
             continue
-        prices = panel["price_sol_per_token"].to_numpy()
-        secs = panel["seconds_since_deploy"].to_numpy()
-        vol = panel["volume_sol"].to_numpy()
-        buy_vol = panel["buy_volume_sol"].to_numpy()
-        sell_vol = panel["sell_volume_sol"].to_numpy()
-        top_w = panel["top_wallet_bought"].to_numpy().astype(bool)
-        holders = panel["holders_count"].to_numpy()
+        prices_full = panel["price_sol_per_token"].to_numpy()
+        secs_full = panel["seconds_since_deploy"].to_numpy()
+        entry_idx = int(np.searchsorted(secs_full, LATENCY_SEC, side="left"))
+        if entry_idx >= len(prices_full):
+            continue
+        prices = prices_full[entry_idx:]
+        secs = secs_full[entry_idx:]  # keep absolute seconds_since_deploy; deployer_sell_exit compares to absolute sell_sec
+        vol = panel["volume_sol"].to_numpy()[entry_idx:]
+        buy_vol = panel["buy_volume_sol"].to_numpy()[entry_idx:]
+        sell_vol = panel["sell_volume_sol"].to_numpy()[entry_idx:]
+        top_w = panel["top_wallet_bought"].to_numpy().astype(bool)[entry_idx:]
+        holders = panel["holders_count"].to_numpy()[entry_idx:]
         result = strategy_fn(
             tid=tid, secs=secs, prices=prices, vol=vol,
             buy_vol=buy_vol, sell_vol=sell_vol, top_w=top_w, holders=holders,
@@ -106,10 +124,12 @@ def fixed_2x(tid, secs, prices, vol, buy_vol, sell_vol, top_w, holders, extras):
         cum_max = max(cum_max, prices[i])
         cum_min = min(cum_min, prices[i])
         if prices[i] >= target:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            _, pnl, _ = round_trip_pnl(entry, prices[i], POSITION_SOL)
+            return TradeResult(tid, entry, prices[i], int(secs[i]), pnl / POSITION_SOL,
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "tp_2x")
-    return TradeResult(tid, entry, prices[-1], int(secs[-1]),
+    _, pnl, _ = round_trip_pnl(entry, prices[-1], POSITION_SOL)
+    return TradeResult(tid, entry, prices[-1], int(secs[-1]), pnl / POSITION_SOL,
                        cum_min / entry - 1, cum_max / entry - 1,
                        int(secs[-1] - secs[0]), "timeout")
 
@@ -124,14 +144,17 @@ def tp2x_sl50(tid, secs, prices, vol, buy_vol, sell_vol, top_w, holders, extras)
         cum_max = max(cum_max, prices[i])
         cum_min = min(cum_min, prices[i])
         if prices[i] >= target:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            _, pnl, _ = round_trip_pnl(entry, prices[i], POSITION_SOL)
+            return TradeResult(tid, entry, prices[i], int(secs[i]), pnl / POSITION_SOL,
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "tp_2x")
         if prices[i] <= stop:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            _, pnl, _ = round_trip_pnl(entry, prices[i], POSITION_SOL)
+            return TradeResult(tid, entry, prices[i], int(secs[i]), pnl / POSITION_SOL,
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "sl_50")
-    return TradeResult(tid, entry, prices[-1], int(secs[-1]),
+    _, pnl, _ = round_trip_pnl(entry, prices[-1], POSITION_SOL)
+    return TradeResult(tid, entry, prices[-1], int(secs[-1]), pnl / POSITION_SOL,
                        cum_min / entry - 1, cum_max / entry - 1,
                        int(secs[-1] - secs[0]), "timeout")
 
@@ -148,14 +171,14 @@ def trailing_30(tid, secs, prices, vol, buy_vol, sell_vol, top_w, holders, extra
         if not armed and prices[i] >= armed_after:
             armed = True
         if armed and prices[i] <= 0.7 * cum_max:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            return TradeResult(tid, entry, prices[i], int(secs[i]), roi_from_prices(entry, prices[i]),
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "trail")
         if prices[i] <= 0.4 * entry:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            return TradeResult(tid, entry, prices[i], int(secs[i]), roi_from_prices(entry, prices[i]),
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "sl_60")
-    return TradeResult(tid, entry, prices[-1], int(secs[-1]),
+    return TradeResult(tid, entry, prices[-1], int(secs[-1]), roi_from_prices(entry, prices[-1]),
                        cum_min / entry - 1, cum_max / entry - 1,
                        int(secs[-1] - secs[0]), "timeout")
 
@@ -171,18 +194,18 @@ def deployer_sell_exit(tid, secs, prices, vol, buy_vol, sell_vol, top_w, holders
         cum_max = max(cum_max, prices[i])
         cum_min = min(cum_min, prices[i])
         if sell_sec is not None and secs[i] >= sell_sec:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            return TradeResult(tid, entry, prices[i], int(secs[i]), roi_from_prices(entry, prices[i]),
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "deployer_sell")
         if prices[i] >= target:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            return TradeResult(tid, entry, prices[i], int(secs[i]), roi_from_prices(entry, prices[i]),
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "tp_3x")
         if prices[i] <= 0.5 * entry:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            return TradeResult(tid, entry, prices[i], int(secs[i]), roi_from_prices(entry, prices[i]),
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "sl_50")
-    return TradeResult(tid, entry, prices[-1], int(secs[-1]),
+    return TradeResult(tid, entry, prices[-1], int(secs[-1]), roi_from_prices(entry, prices[-1]),
                        cum_min / entry - 1, cum_max / entry - 1,
                        int(secs[-1] - secs[0]), "timeout")
 
@@ -207,18 +230,18 @@ def volume_stagnation(tid, secs, prices, vol, buy_vol, sell_vol, top_w, holders,
         else:
             stag = 0
         if stag >= 10:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            return TradeResult(tid, entry, prices[i], int(secs[i]), roi_from_prices(entry, prices[i]),
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "vol_stagnation")
         if prices[i] >= 2.0 * entry:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            return TradeResult(tid, entry, prices[i], int(secs[i]), roi_from_prices(entry, prices[i]),
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "tp_2x")
         if prices[i] <= 0.5 * entry:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            return TradeResult(tid, entry, prices[i], int(secs[i]), roi_from_prices(entry, prices[i]),
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "sl_50")
-    return TradeResult(tid, entry, prices[-1], int(secs[-1]),
+    return TradeResult(tid, entry, prices[-1], int(secs[-1]), roi_from_prices(entry, prices[-1]),
                        cum_min / entry - 1, cum_max / entry - 1,
                        int(secs[-1] - secs[0]), "timeout")
 
@@ -239,18 +262,18 @@ def sell_pressure(tid, secs, prices, vol, buy_vol, sell_vol, top_w, holders, ext
         else:
             consec = 0
         if consec >= 5:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            return TradeResult(tid, entry, prices[i], int(secs[i]), roi_from_prices(entry, prices[i]),
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "sell_pressure")
         if prices[i] >= 2.0 * entry:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            return TradeResult(tid, entry, prices[i], int(secs[i]), roi_from_prices(entry, prices[i]),
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "tp_2x")
         if prices[i] <= 0.5 * entry:
-            return TradeResult(tid, entry, prices[i], int(secs[i]),
+            return TradeResult(tid, entry, prices[i], int(secs[i]), roi_from_prices(entry, prices[i]),
                                cum_min / entry - 1, cum_max / entry - 1,
                                int(secs[i] - secs[0]), "sl_50")
-    return TradeResult(tid, entry, prices[-1], int(secs[-1]),
+    return TradeResult(tid, entry, prices[-1], int(secs[-1]), roi_from_prices(entry, prices[-1]),
                        cum_min / entry - 1, cum_max / entry - 1,
                        int(secs[-1] - secs[0]), "timeout")
 
@@ -274,6 +297,9 @@ def aggregate(results: list[TradeResult]) -> dict:
     reasons = [r.reason for r in results]
     reason_counts = {k: reasons.count(k) for k in set(reasons)}
     wins = rois > 0
+    pos = np.sort(rois[rois > 0])[::-1]
+    top10_share = float(pos[:min(10, len(pos))].sum() / pos.sum()) if len(pos) else float("nan")
+    winsorized_pnl_sol = float(np.clip(rois, -1.0, 5.0).sum() * POSITION_SOL)
     return {
         "n": len(results),
         "mean_roi": float(rois.mean()),
@@ -281,6 +307,9 @@ def aggregate(results: list[TradeResult]) -> dict:
         "p10_roi": float(np.quantile(rois, 0.1)),
         "p90_roi": float(np.quantile(rois, 0.9)),
         "win_rate": float(wins.mean()),
+        "total_pnl_sol": float(rois.sum() * POSITION_SOL),
+        "winsorized_pnl_sol_cap500pct": winsorized_pnl_sol,
+        "top10_positive_pnl_share": top10_share,
         "median_hold_sec": float(np.median(holds)),
         "p90_hold_sec": float(np.quantile(holds, 0.9)),
         "median_dd": float(np.median(drawdowns)),
