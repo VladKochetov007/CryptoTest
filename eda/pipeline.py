@@ -43,27 +43,59 @@ def _():
 @app.cell
 def _():
     # --- pipeline constants ---
-    LABEL_HORIZON_SEC = 1800   # hit_2x label resolves at t_peer + 1800s
+    LABEL_HORIZON_SEC = 1800   # hit_2x label resolves at t_deploy + 1800s
     LATENCY_SEC = 1            # first bot-accessible slot (slot 0 = deployer devbuy)
     POSITION_SOL = 0.1         # size per trade in SOL
-    ARM_MULT = 1.5             # trailing stop arms when price hits 1.5x entry
-    TRAIL_FRAC = 0.70          # exit when price drops to 70% of running max
-    SL_FRAC = 0.40             # hard stop: exit at 40% of entry price
+
+    # trailing-stop strategy
+    ARM_MULT = 1.5             # trail arms when price first hits ARM_MULT * entry
+    TRAIL_FRAC = 0.70          # exit when price <= TRAIL_FRAC * running peak
+    SL_FRAC = 0.40             # hard stop at SL_FRAC * entry
+
+    # walk-forward CV
+    N_FOLDS = 5
+    EMBARGO_SEC = 3600         # 1h gap between train tail and val head
+
+    # LGBM
+    LGBM_BOOST_ROUNDS = 600
+    LGBM_EARLY_STOP = 50
+
+    # scoring / universe selection
+    TOP_DECILE = 0.9           # OOF score quantile threshold for buy universe
+
+    # meme-keyword rolling win-rate bucketing
+    MEME_BUCKET_SEC = 900      # 15-min bucket
+    MEME_ROLL_BUCKETS = 96     # 96 * 15 min = 24h look-back
+    MEME_LAG_BUCKETS = 3       # 3 * 15 min = 45 min lag (clears 30-min label window)
+
+    # funder dust-wallet detection
+    DUST_SOL_THRESHOLD = 0.5   # deposit < 0.5 SOL = dust
+    DUST_MIN_PRIOR = 5         # must have funded at least 5 prior deployers
+
     CAT_COL = "deployer_wallet_source_cex_name"
 
-    # pump.fun bonding-curve invariant: K = v_sol_init * v_token_init
-    # v_sol_init = 30 SOL, v_token_init = 1.073e9 tokens (human units)
+    # pump.fun bonding-curve invariant K = v_sol_init * v_token_init
     K_INVARIANT = 30.0 * 1.073e9
     TAKER_FEE = 0.01
     return (
         ARM_MULT,
         CAT_COL,
+        DUST_MIN_PRIOR,
+        DUST_SOL_THRESHOLD,
+        EMBARGO_SEC,
         K_INVARIANT,
         LABEL_HORIZON_SEC,
         LATENCY_SEC,
+        LGBM_BOOST_ROUNDS,
+        LGBM_EARLY_STOP,
+        MEME_BUCKET_SEC,
+        MEME_LAG_BUCKETS,
+        MEME_ROLL_BUCKETS,
+        N_FOLDS,
         POSITION_SOL,
         SL_FRAC,
         TAKER_FEE,
+        TOP_DECILE,
         TRAIL_FRAC,
     )
 
@@ -111,7 +143,17 @@ def _(K_INVARIANT, TAKER_FEE):
 
 
 @app.cell
-def _(LABEL_HORIZON_SEC, defaultdict, np, pl):
+def _(
+    DUST_MIN_PRIOR,
+    DUST_SOL_THRESHOLD,
+    LABEL_HORIZON_SEC,
+    MEME_BUCKET_SEC,
+    MEME_LAG_BUCKETS,
+    MEME_ROLL_BUCKETS,
+    defaultdict,
+    np,
+    pl,
+):
     # --- inlined feature functions (from eda/build_meta_features.py) ---
 
     MEME_KW = [
@@ -219,7 +261,7 @@ def _(LABEL_HORIZON_SEC, defaultdict, np, pl):
                 else:
                     rec_hhi[tid] = float("nan"); rec_amt[tid] = float("nan")
                 this_amt = amts[i]
-                rec_dust[tid] = int((not np.isnan(this_amt)) and (this_amt < 0.5) and (cum_n_prior > 5))
+                rec_dust[tid] = int((not np.isnan(this_amt)) and (this_amt < DUST_SOL_THRESHOLD) and (cum_n_prior > DUST_MIN_PRIOR))
         all_tids = feat["token_id"].to_list()
         return pl.DataFrame([
             pl.Series("token_id", all_tids, dtype=pl.Int32),
@@ -395,17 +437,17 @@ def _(LABEL_HORIZON_SEC, defaultdict, np, pl):
             if sub.is_empty():
                 continue
             per_bucket = (
-                sub.with_columns((pl.col("deploy_time_unix") // 900).alias("bucket"))
+                sub.with_columns((pl.col("deploy_time_unix") // MEME_BUCKET_SEC).alias("bucket"))
                 .group_by("bucket")
                 .agg(pl.len().alias("n"), pl.col("hit_2x").cast(pl.Int32).sum().alias("hits"))
                 .sort("bucket")
                 .with_columns(
-                    pl.col("n").rolling_sum(window_size=96, min_periods=1).alias("n_96"),
-                    pl.col("hits").rolling_sum(window_size=96, min_periods=1).alias("hits_96"),
+                    pl.col("n").rolling_sum(window_size=MEME_ROLL_BUCKETS, min_periods=1).alias("n_96"),
+                    pl.col("hits").rolling_sum(window_size=MEME_ROLL_BUCKETS, min_periods=1).alias("hits_96"),
                 )
                 .with_columns(
-                    pl.col("n_96").shift(3).alias("n_prev"),
-                    pl.col("hits_96").shift(3).alias("hits_prev"),
+                    pl.col("n_96").shift(MEME_LAG_BUCKETS).alias("n_prev"),
+                    pl.col("hits_96").shift(MEME_LAG_BUCKETS).alias("hits_prev"),
                 )
                 .with_columns(
                     (pl.col("hits_prev") / pl.col("n_prev").clip(lower_bound=1))
@@ -413,7 +455,7 @@ def _(LABEL_HORIZON_SEC, defaultdict, np, pl):
                 )
             )
             joined = (
-                sub.with_columns((pl.col("deploy_time_unix") // 900).alias("bucket"))
+                sub.with_columns((pl.col("deploy_time_unix") // MEME_BUCKET_SEC).alias("bucket"))
                 .join(per_bucket.select("bucket", "meme_kw_hr_24h"), on="bucket", how="left")
                 .select("token_id", "meme_kw_hr_24h")
             )
@@ -609,7 +651,11 @@ def _():
 @app.cell
 def _(
     BASE_FEATURES,
+    EMBARGO_SEC,
+    LGBM_BOOST_ROUNDS,
+    LGBM_EARLY_STOP,
     META_FEATURES,
+    N_FOLDS,
     df,
     lgb,
     np,
@@ -621,7 +667,7 @@ def _(
     model_cols = [c for c in _all_cols if c in df.columns]
 
     _times = df["deploy_time_unix"].to_numpy()
-    _splits = walkforward_splits(_times, n_folds=5, embargo_sec=3600)
+    _splits = walkforward_splits(_times, n_folds=N_FOLDS, embargo_sec=EMBARGO_SEC)
     _n = df.height
     oof = np.full(_n, np.nan)
     fold_aucs = []
@@ -643,9 +689,9 @@ def _(
             verbose=-1, n_jobs=-1,
         )
         _booster = lgb.train(
-            _params, _ds_tr, num_boost_round=600,
+            _params, _ds_tr, num_boost_round=LGBM_BOOST_ROUNDS,
             valid_sets=[_ds_va],
-            callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)],
+            callbacks=[lgb.early_stopping(LGBM_EARLY_STOP), lgb.log_evaluation(0)],
         )
         _pred = _booster.predict(_X_va)
         oof[_va_idx] = _pred
@@ -692,9 +738,9 @@ def _(booster, model_cols, np, plt):
 
 
 @app.cell
-def _(df, np, oof):
+def _(TOP_DECILE, df, np, oof):
     _mask = ~np.isnan(oof)
-    _thresh = float(np.quantile(oof[_mask], 0.9))
+    _thresh = float(np.quantile(oof[_mask], TOP_DECILE))
 
     _valid_ids = df["token_id"].to_numpy()[_mask]
     _valid_oof = oof[_mask]
@@ -714,7 +760,7 @@ def _(df, np, oof):
 
 @app.cell
 def _(SLOTS, model_ids, pl, random_ids):
-    _all_ids = pl.Series("token_id", list(set(model_ids) | set(random_ids)), dtype=pl.Int32)
+    _all_ids = list(set(model_ids) | set(random_ids))
     _raw = (
         pl.scan_parquet(SLOTS)
         .filter(pl.col("token_id").is_in(_all_ids) & (pl.col("price_sol_per_token") > 0))
@@ -729,6 +775,7 @@ def _(SLOTS, model_ids, pl, random_ids):
 @app.cell
 def _(
     ARM_MULT,
+    LABEL_HORIZON_SEC,
     LATENCY_SEC,
     POSITION_SOL,
     SL_FRAC,
@@ -799,7 +846,7 @@ def _(
             panel = panels.get(tid)
             if panel is None:
                 continue
-            sub = panel.filter(pl.col("seconds_since_deploy") <= 1800)
+            sub = panel.filter(pl.col("seconds_since_deploy") <= LABEL_HORIZON_SEC)
             if sub.height == 0:
                 continue
             secs = sub["seconds_since_deploy"].to_numpy()
@@ -931,11 +978,11 @@ def _(TRADE_LOG_CSV, mo, trade_log):
 
 
 @app.cell
-def _(df, np, oof, pl, tokens):
+def _(TOP_DECILE, df, np, oof, pl, tokens):
     _mask_oof = ~np.isnan(oof)
     _scores_valid = oof[_mask_oof]
     _ids_valid = df["token_id"].to_numpy()[_mask_oof]
-    _thresh = float(np.quantile(_scores_valid, 0.9))
+    _thresh = float(np.quantile(_scores_valid, TOP_DECILE))
     _n_buy = int((_scores_valid >= _thresh).sum())
 
     _oof_out = pl.DataFrame({
@@ -982,6 +1029,8 @@ def _(mo, top1000):
     mo.vstack([
         mo.md("**Top 20**"),
         top1000.head(20),
+        mo.md("**Bottop 20**"),
+        top1000.tail(20),
     ])
     return
 
